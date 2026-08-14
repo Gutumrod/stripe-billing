@@ -1,0 +1,19 @@
+{
+  "name": "@module-hub/payment",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./core": "./core/index.ts",
+    "./adapters": "./adapters/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

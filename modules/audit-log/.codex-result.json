@@ -1,0 +1,21 @@
+คุณฟรี เสร็จแล้วครับ
+
+สร้าง/แก้ไฟล์ตาม Stage 2 ครบ 10 ไฟล์:
+
+- `core/types.ts`
+- `core/validate.ts`
+- `core/redact.ts`
+- `core/clone.ts`
+- `core/audit.ts`
+- `core/index.ts`
+- `adapters/memory.ts`
+- `adapters/postgres.ts`
+- `package.json`
+- `tsconfig.json`
+
+รันแล้ว:
+
+- `npm install` exit code `0`
+- `npm run typecheck` exit code `0`
+
+Sanity scan ใน `core/` และ `adapters/` ไม่พบ `node:*`, `process.env`, `globalThis`, หรือ env read. `npm install` สร้าง `package-lock.json` และ `node_modules` ตามปกติ และ npm รายงาน audit vulnerabilities จาก dependency tree ของ dev deps 5 รายการ แต่ typecheck ผ่านเรียบร้อย.

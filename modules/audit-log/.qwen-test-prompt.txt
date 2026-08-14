@@ -1,0 +1,184 @@
+You are writing a comprehensive vitest test suite for the Audit Log module located at:
+
+D:\AI-Workspace\projects\modules-hub\modules\audit-log
+
+YOUR ONLY DELIVERABLE is the test file written to this EXACT ABSOLUTE PATH:
+
+D:\AI-Workspace\projects\modules-hub\modules\audit-log\tests\audit.test.ts
+
+Rules:
+- Do NOT edit, modify, or "fix" any production source under core/, adapters/, or DESIGN.md, MODULE.md, integration.example.ts, VERSION. Tests only.
+- Do NOT delete anything.
+- Do NOT run destructive commands.
+- No empty/skipped/mocked-away tests (no `it.skip`, no `xit`, no empty test bodies that assert nothing). Every test must genuinely exercise code.
+
+The production API surface you must test (import these exact paths):
+
+From '../core' (core/index.ts):
+- createAuditLog(config) -> AuditLogClient with record(event), query(filters), close()
+- Types: AuditLogConfig, AuditEvent, AuditRecord, AuditStore, AuditError, AuditErrorCode, QueryFilters, RecordResult, QueryResult, PostgresAuditStoreOptions, RedactionConfig
+
+From '../core/redact':
+- redactObject(data, options?) — the redaction engine (also used internally by createAuditLog)
+
+From '../core/clone':
+- deepClone(data) — deep clone used to guarantee immutability
+
+From '../adapters/memory':
+- createInMemoryAuditStore() -> AuditStore (append/query/close)
+
+From '../adapters/postgres':
+- createPostgresAuditStore(options) -> AuditStore, and the exported constant AUDIT_LOG_DDL
+
+Use a fake/in-memory AuditStore and a fake Postgres `query` executor (mimicking pg/neon/supabase rpc) to drive createAuditLog. Do not attempt real DB connections.
+
+STRUCTURE — write ~14-18 describe blocks covering ALL of the following, and aim for 62-88 passing `it(...)` tests total. Match the sibling style (tests/storage.test.ts in file-storage-module, tests/config.test.ts in config-runtime-module): import { describe, it, expect } from 'vitest', group by describe block, use clear test names.
+
+1. createAuditLog — config validation:
+   - config not an object -> throws CONFIG_INVALID
+   - missing store -> throws CONFIG_INVALID
+   - store missing append -> CONFIG_INVALID
+   - store missing query -> CONFIG_INVALID
+   - redaction.mask not a string -> CONFIG_INVALID
+   - customSensitiveFields not an array -> CONFIG_INVALID
+   - customSensitiveFields containing a non-string / empty-string element -> CONFIG_INVALID
+   - getCurrentTimestamp not a function -> CONFIG_INVALID
+   - valid config does NOT throw
+
+2. record — audit entry contract (happy path):
+   - successful record returns { success: true, recordId, timestamp }
+   - recordId is a non-empty string / UUID format
+   - returned timestamp is the injected getCurrentTimestamp value when provided
+   - returned timestamp is a valid ISO 8601 when derived from Date
+   - event.timestamp is honored when explicitly provided
+   - stored record preserves actor.type and actor.id
+   - stored record preserves action
+   - stored record preserves entity.type and entity.id
+   - stored record preserves before
+   - stored record preserves after
+   - stored record preserves metadata
+   - record without before/after/metadata omits them (record.before === undefined etc.)
+   - actor.id is optional and works without it
+
+3. record — validation failures (failure paths):
+   - event not an object -> returns { success:false, error.code === 'EVENT_INVALID' }
+   - missing actor -> EVENT_INVALID
+   - actor not an object -> EVENT_INVALID
+   - actor.type missing/empty -> EVENT_INVALID
+   - actor.type not a string -> EVENT_INVALID
+   - actor.id non-string -> EVENT_INVALID
+   - action missing/empty -> EVENT_INVALID
+   - action not a string -> EVENT_INVALID
+   - entity missing -> EVENT_INVALID
+   - entity.type missing/empty -> EVENT_INVALID
+   - entity.id missing/empty -> EVENT_INVALID
+   - entity not an object -> EVENT_INVALID
+   - invalid timestamp (not ISO) -> EVENT_INVALID
+   - timestamp a non-string -> EVENT_INVALID
+   - metadata not an object -> EVENT_INVALID
+   - On validation failure, store.append is NOT called (assert the store wasn't touched)
+
+4. record — redaction (security paths, MUST actually redact):
+   - before.password becomes the mask string '[REDACTED]' (default mask)
+   - nested sensitive fields redacted (e.g. after.user.apiKey)
+   - custom mask honored when configured
+   - customSensitiveFields adds extra redacted fields (e.g. 'email', 'ipAddress')
+   - built-in sensitive field list redacted: password, token, secret, authorization, apiKey/apikey, creditCard/creditcard, ssn, privateKey/privatekey
+   - redaction is case-insensitive (e.g. 'Password', 'TOKEN', 'ApiKey')
+   - sensitive values inside arrays are redacted
+   - non-sensitive fields are preserved unchanged
+   - redaction applied to before, after, AND metadata
+   - original event object is NOT mutated (input immutability)
+   - redacted value is a deep clone: mutating returned record does not affect the original event
+
+5. record — store failures & error codes:
+   - store.append throws -> returns { success:false, error.code === 'STORE_FAILED' }
+   - STORE_FAILED error preserves cause
+   - redaction failure path: make redactObject/redactAndClone throw (e.g. via an object that throws on property access, or a config that causes an error) -> returns REDACTION_FAILED error code
+
+6. query — happy paths:
+   - query with no filters returns all records
+   - query returns total count
+   - returned records match recorded entries
+
+7. query — filter matching:
+   - filter by actor.id
+   - filter by actor.type
+   - filter by action
+   - filter by entity.type
+   - filter by entity.id
+   - filter by dateRange.from (inclusive boundary)
+   - filter by dateRange.to (inclusive boundary)
+   - combined filters (AND behavior)
+
+8. query — pagination:
+   - default limit caps results (append >50 records, query returns at most 50)
+   - limit honored (append 10, query with limit 5 returns 5)
+   - offset pagination works
+   - limit clamped to MAX_LIMIT 1000
+   - total reflects ALL matches regardless of limit (not just page)
+
+9. query — validation failures (error codes):
+   - filters not an object -> QUERY_FAILED
+   - limit not a positive integer -> QUERY_FAILED
+   - limit 0 / negative / float -> QUERY_FAILED
+   - limit > 1000 -> QUERY_FAILED
+   - offset not a positive integer -> QUERY_FAILED
+   - dateRange.from invalid ISO -> QUERY_FAILED
+   - dateRange.to invalid ISO -> QUERY_FAILED
+   - On invalid filters, store.query is NOT called
+
+10. query — store failure:
+    - store.query throws -> { success:false, error.code === 'QUERY_FAILED' }
+    - QUERY_FAILED preserves cause
+
+11. close:
+    - close() calls store.close when present
+    - close() works when store has no close (undefined)
+
+12. redactObject (core/redact.ts) — direct engine tests:
+    - redacts password
+    - redacts nested
+    - redacts within arrays
+    - custom mask
+    - custom sensitive fields
+    - case-insensitive matching
+    - does not mutate input
+    - handles Date/RegExp/Map/Set primitives without throwing (non-plain objects pass through)
+    - returns a deep copy (not the same reference)
+    - null/undefined/primitive input passes through
+
+13. deepClone (core/clone.ts):
+    - deep clones nested objects
+    - clones arrays
+    - handles circular references without infinite loop
+    - clones Date, RegExp, Map, Set
+    - primitives returned as-is
+    - cloned output does not share reference with input
+
+14. createInMemoryAuditStore (adapters/memory.ts):
+    - append then query returns the record
+    - append clones (mutating the record passed to append does not change stored data)
+    - query filters by actor/entity/action
+    - query date range filtering
+    - pagination default limit & offset
+
+15. createPostgresAuditStore (adapters/postgres.ts) — fake query executor:
+    - append builds correct INSERT with all fields and params ($1..$10)
+    - append passes null for missing optional fields (before/after/metadata/actor.id)
+    - append passes JSON.stringify for before/after/metadata
+    - query builds correct SQL with LIMIT/OFFSET
+    - query builds WHERE with conditions for each filter (actor.id, actor.type, action, entity.type, entity.id, dateRange.from, dateRange.to) and correct $n params
+    - query maps rows back to AuditRecord (rowToRecord): actor_type/actor_id, entity_type/entity_id, action, timestamp Date->ISO
+    - query handles null before/after/metadata/actor_id (fields omitted)
+    - query computes total from result.count or total_count column
+    - tableName option honored (default 'audit_logs', custom table quoted)
+    - quoteIdentifier rejects invalid SQL identifiers (throws 'Invalid SQL identifier') e.g. tableName with a space or semicolon -> append throws
+    - AUDIT_LOG_DDL constant contains CREATE TABLE IF NOT EXISTS audit_logs, REVOKE UPDATE, DELETE ON audit_logs FROM PUBLIC, and index definitions
+
+16. Structured error codes (AuditErrorCode):
+    - all documented error codes present: CONFIG_INVALID, EVENT_INVALID, REDACTION_FAILED, STORE_FAILED, QUERY_FAILED, PROVIDER_ERROR (assert the type-level union values / that createAuditLog surfaces each when triggered)
+
+VERIFY: After writing the file, run `npm test` (vitest run) from D:\AI-Workspace\projects\modules-hub\modules\audit-log and confirm ALL tests pass. Fix any test that fails because the test is wrong. If a test fails due to a GENUINE production bug in core/ or adapters/, DO NOT fix the production code — leave the test in place (it may fail) and note it, because the QA harness will handle it. Report the final `npm test` pass/fail count.
+
+Report back: the number of tests written and passing, and whether npm test exits 0.

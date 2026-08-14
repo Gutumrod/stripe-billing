@@ -1,0 +1,15 @@
+{
+  "name": "audit-log-module",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reusable Audit Log module — Host injects config & adapter, core handles validation, redaction, immutability, and queries.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "vitest": "2.1.4"
+  }
+}

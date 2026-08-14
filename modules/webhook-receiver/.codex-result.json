@@ -1,0 +1,27 @@
+คุณฟรี งาน Stage 2 เสร็จแล้วครับ
+
+เขียนไฟล์ตาม path ที่กำหนดครบ 15 ไฟล์:
+
+1. `package.json`
+2. `tsconfig.json`
+3. `core/types.ts`
+4. `core/errors.ts`
+5. `core/payload.ts`
+6. `core/timestamp.ts`
+7. `core/idempotency.ts`
+8. `core/verifier.ts`
+9. `core/verify.ts`
+10. `core/index.ts`
+11. `providers/generic-hmac/hmac.ts`
+12. `providers/generic-hmac/index.ts`
+13. `providers/line/index.ts`
+14. `providers/stripe/index.ts`
+15. `providers/github/index.ts`
+
+รันแล้ว:
+- `npm install` exit code `0`
+- `npm run typecheck` exit code `0`
+
+ไม่ได้รัน test suite และไม่ได้สร้าง `tests/`, `MODULE.md`, `integration.example.ts`, หรือ `VERSION` ตามข้อกำหนดครับ
+
+หมายเหตุ: `npm install` สร้าง `package-lock.json` และ `node_modules` ตามปกติ และ npm audit แจ้ง vulnerability 5 รายการจาก dependency tree แต่ไม่ได้แก้เพราะไม่ได้อยู่ใน scope และอาจเปลี่ยน dependency versions.
