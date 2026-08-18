@@ -29,6 +29,7 @@ export type Subscription = {
   cancelAtPeriodEnd: boolean;
   canceledAt?: Date;
   metadata?: Record<string, string>;
+  lastProcessedEventId?: string;
 };
 
 export type SubscriptionBillingEvent = {
@@ -42,6 +43,7 @@ export type SubscriptionBillingEvent = {
   planId?: string;
   currentPeriodEnd?: Date;
   rawEvent?: unknown;
+  eventId?: string;
 };
 
 export type SubscriptionCoreConfig = {

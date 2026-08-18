@@ -5,14 +5,15 @@
  * - core: normalizeHeaders, timingSafeEqual, parseTimestamp, validateTimestampWindow,
  *   payload helpers, idempotency, verifier registry, full verify pipeline.
  * - providers/generic-hmac: GenericHmacVerifier (fully implemented).
- * - providers/line, stripe, github: stub verifiers (return WEBHOOK_UNKNOWN_PROVIDER).
+ * - providers/stripe: StripeWebhookVerifier (fully implemented).
+ * - providers/line, github: stub verifiers (return WEBHOOK_UNKNOWN_PROVIDER).
  *
  * HMAC signatures are computed with the Web Crypto API to match production exactly.
  * An in-memory IdempotencyStore (real Map-based implementation, not a vi.fn mock)
  * exercises replay detection genuinely.
  *
  * Rules: no vi.mock, no .skip, no .todo, no empty test bodies. Every test invokes
- * the module under test. Tests for LINE/Stripe/Github stubs assert their ACTUAL
+ * the module under test. Tests for LINE/Github stubs assert their ACTUAL
  * behavior (returning WEBHOOK_UNKNOWN_PROVIDER), not fabricated success.
  */
 
@@ -66,6 +67,17 @@ async function computeHmacBytes(
   );
   const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
   return new Uint8Array(mac);
+}
+
+/** Computes Stripe signature header for given timestamp, secret, and body. */
+async function computeStripeSignatureHeader(
+  secret: string,
+  timestamp: number | string,
+  rawBody: string
+): Promise<string> {
+  const payload = `${timestamp}.${rawBody}`;
+  const sig = toHex(await computeHmacBytes(secret, payload));
+  return `t=${timestamp},v1=${sig}`;
 }
 
 function toHex(bytes: Uint8Array): string {
@@ -831,18 +843,209 @@ describe('LineWebhookVerifier (stub)', () => {
   });
 });
 
-describe('StripeWebhookVerifier (stub)', () => {
+describe('StripeWebhookVerifier', () => {
+  const secret = 'whsec_test_secret_123';
+  const sampleEvent = {
+    id: 'evt_1Mv9qoLkdIwHu7ix0Example',
+    type: 'payment_intent.succeeded',
+    data: { object: { id: 'pi_123', amount: 2000 } },
+  };
+  const body = JSON.stringify(sampleEvent);
+
   it('has providerName "stripe"', () => {
     expect(new StripeWebhookVerifier().providerName).toBe('stripe');
   });
 
-  it('verify() returns WEBHOOK_UNKNOWN_PROVIDER with "not yet implemented" message', async () => {
-    const v = new StripeWebhookVerifier();
-    const result = await v.verify({ rawBody: '', headers: {} });
+  it('freezes its config', () => {
+    const v = new StripeWebhookVerifier({ secret });
+    expect(Object.isFrozen(v.config)).toBe(true);
+  });
+
+  it('verifies a valid Stripe signature and extracts event details', async () => {
+    const ts = nowSeconds();
+    const sigHeader = await computeStripeSignatureHeader(secret, ts, body);
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': sigHeader },
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.eventId).toBe('evt_1Mv9qoLkdIwHu7ix0Example');
+    expect(result.eventType).toBe('payment_intent.succeeded');
+    expect(result.payload).toEqual(sampleEvent);
+    expect(result.timestamp).toBe(ts);
+  });
+
+  it('verifies when header contains legacy v0 alongside valid v1', async () => {
+    const ts = nowSeconds();
+    const payload = `${ts}.${body}`;
+    const v1Sig = toHex(await computeHmacBytes(secret, payload));
+    const header = `t=${ts},v0=legacy_sig,v1=${v1Sig}`;
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': header },
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.eventId).toBe('evt_1Mv9qoLkdIwHu7ix0Example');
+  });
+
+  it('verifies when multiple v1 signatures exist (e.g. secret rollover)', async () => {
+    const ts = nowSeconds();
+    const payload = `${ts}.${body}`;
+    const validV1 = toHex(await computeHmacBytes(secret, payload));
+    const header = `t=${ts},v1=0000000000000000000000000000000000000000000000000000000000000000,v1=${validV1}`;
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': header },
+    });
+
+    expect(result.valid).toBe(true);
+  });
+
+  it('returns WEBHOOK_MISSING_SIGNATURE when stripe-signature header is absent', async () => {
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({ rawBody: body, headers: {} });
     expect(result.valid).toBe(false);
-    expect(result.error?.code).toBe('WEBHOOK_UNKNOWN_PROVIDER');
-    expect(result.error?.message).toContain('not yet implemented');
+    expect(result.error?.code).toBe('WEBHOOK_MISSING_SIGNATURE');
     expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_MISSING_SIGNATURE when stripe-signature is empty string', async () => {
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({ rawBody: body, headers: { 'stripe-signature': '' } });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_MISSING_SIGNATURE');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_INVALID_SIGNATURE for a malformed header missing t', async () => {
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': 'v1=5257a869e7ecebeda32a' },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_INVALID_SIGNATURE');
+    expect(result.error?.message).toContain('Malformed stripe-signature header');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_INVALID_SIGNATURE for a malformed header missing v1', async () => {
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': `t=${nowSeconds()}` },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_INVALID_SIGNATURE');
+    expect(result.error?.message).toContain('Malformed stripe-signature header');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_INVALID_SIGNATURE for a malformed header with non-integer t', async () => {
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': 't=invalid_timestamp,v1=abcd' },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_INVALID_SIGNATURE');
+    expect(result.error?.message).toContain('Malformed stripe-signature header');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_INVALID_SIGNATURE for a wrong secret', async () => {
+    const ts = nowSeconds();
+    const sigHeader = await computeStripeSignatureHeader('wrong_secret', ts, body);
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': sigHeader },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_INVALID_SIGNATURE');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_INVALID_SIGNATURE for a tampered body', async () => {
+    const ts = nowSeconds();
+    const sigHeader = await computeStripeSignatureHeader(secret, ts, body);
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: '{"tampered":true}',
+      headers: { 'stripe-signature': sigHeader },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_INVALID_SIGNATURE');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_INVALID_SIGNATURE for a malformed hex v1 signature', async () => {
+    const ts = nowSeconds();
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': `t=${ts},v1=not-valid-hex!` },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_INVALID_SIGNATURE');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_EXPIRED_TIMESTAMP for a timestamp outside tolerance', async () => {
+    const expiredTs = nowSeconds() - 600;
+    const sigHeader = await computeStripeSignatureHeader(secret, expiredTs, body);
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': sigHeader },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_EXPIRED_TIMESTAMP');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_MALFORMED_JSON for malformed JSON body after valid signature', async () => {
+    const invalidJson = '{ bad json';
+    const ts = nowSeconds();
+    const sigHeader = await computeStripeSignatureHeader(secret, ts, invalidJson);
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: invalidJson,
+      headers: { 'stripe-signature': sigHeader },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_MALFORMED_JSON');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('returns WEBHOOK_MALFORMED_JSON for non-object JSON payload after valid signature', async () => {
+    const arrayJson = '[1, 2, 3]';
+    const ts = nowSeconds();
+    const sigHeader = await computeStripeSignatureHeader(secret, ts, arrayJson);
+    const v = new StripeWebhookVerifier({ secret });
+    const result = await v.verify({
+      rawBody: arrayJson,
+      headers: { 'stripe-signature': sigHeader },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error?.code).toBe('WEBHOOK_MALFORMED_JSON');
+    expect(result.error?.provider).toBe('stripe');
+  });
+
+  it('honors custom toleranceSeconds configured on verifier', async () => {
+    const ts = nowSeconds() - 500;
+    const sigHeader = await computeStripeSignatureHeader(secret, ts, body);
+    const v = new StripeWebhookVerifier({ secret, toleranceSeconds: 1000 });
+    const result = await v.verify({
+      rawBody: body,
+      headers: { 'stripe-signature': sigHeader },
+    });
+    expect(result.valid).toBe(true);
   });
 });
 
@@ -1199,7 +1402,7 @@ describe('verifyWebhookRequest — multi-provider setup', () => {
       provider: 'stripe',
     });
     expect(result.valid).toBe(false);
-    expect(result.error?.code).toBe('WEBHOOK_UNKNOWN_PROVIDER');
+    expect(result.error?.code).toBe('WEBHOOK_MISSING_SIGNATURE');
     expect(result.error?.provider).toBe('stripe');
   });
 

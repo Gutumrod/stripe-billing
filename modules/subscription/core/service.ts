@@ -154,6 +154,10 @@ export function createSubscriptionCore(
       const sub = await subscriptionRepo.getByAccountId(event.accountId);
       if (!sub) return;
 
+      if (event.eventId && sub.lastProcessedEventId === event.eventId) {
+        return;
+      }
+
       const now = new Date();
 
       switch (event.eventType) {
@@ -179,6 +183,7 @@ export function createSubscriptionCore(
           break;
       }
 
+      sub.lastProcessedEventId = event.eventId;
       await subscriptionRepo.save(sub);
       config.hooks?.onSubscriptionChange?.(sub);
     },
