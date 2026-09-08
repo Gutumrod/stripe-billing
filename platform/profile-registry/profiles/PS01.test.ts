@@ -48,7 +48,7 @@ export const ps01TestProfile: ProductBillingProfile = {
   },
   providerMappings: {
     stripe: {
-      test: { stripeProductId: null, stripePriceIds: {} },
+      test: { stripeProductId: 'prod_VDeG7pTAPPBnw8', stripePriceIds: { 'founding-c2': 'price_1UDCxyHB4GRCffd9RyaDWZ1c' } },
       live: { stripeProductId: null, stripePriceIds: {} },
     },
   },

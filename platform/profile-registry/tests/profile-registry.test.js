@@ -28,12 +28,12 @@ test('PS01 registers only as pending_validation', () => {
   const registered = registry.register(ps01TestProfile);
   assert.equal(registered.status, 'pending_validation');
 });
-test('PS01 cannot activate with incomplete Stripe Test admission data', () => {
+test('PS01 cannot activate until admission evidence is complete', () => {
   const registry = new ProductBillingProfileRegistry();
   registry.register(ps01TestProfile);
   assert.throws(
     () => registry.activate(ps01TestProfile.productId, 'test', 1, 'owner'),
-    (error) => error instanceof ProfileActivationError && error.reasons.some((r) => r.includes('Stripe test product mapping')),
+    (error) => error instanceof ProfileActivationError && error.reasons.some((r) => r.includes('admission.testRunId')),
   );
 });
 
