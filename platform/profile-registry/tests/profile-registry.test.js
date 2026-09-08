@@ -20,6 +20,12 @@ function activatableProfile(version = 1) {
   profile.providerMappings.stripe.test.stripePriceIds['founding-c2'] = 'price_test_ps01_founding_c2';
   profile.admission.testRunId = `test-run-${version}`;
   profile.admission.isolationEvidenceRef = `evidence://ps01/isolation/${version}`;
+  profile.admission.providerLifecycleEvidenceRef = `evidence://ps01/provider/${version}`;
+  profile.admission.accountBindingEvidenceRef = `evidence://ps01/account-binding/${version}`;
+  profile.admission.webhookEvidenceRef = `evidence://ps01/webhook/${version}`;
+  profile.admission.reconciliationEvidenceRef = `evidence://ps01/reconciliation/${version}`;
+  profile.admission.entitlementEvidenceRef = `evidence://ps01/entitlement/${version}`;
+  profile.admission.auditEvidenceRef = `evidence://ps01/audit/${version}`;
   return profile;
 }
 
@@ -33,7 +39,7 @@ test('PS01 cannot activate until admission evidence is complete', () => {
   registry.register(ps01TestProfile);
   assert.throws(
     () => registry.activate(ps01TestProfile.productId, 'test', 1, 'owner'),
-    (error) => error instanceof ProfileActivationError && error.reasons.some((r) => r.includes('admission.testRunId')),
+    (error) => error instanceof ProfileActivationError && error.reasons.some((r) => r.includes('admission.accountBindingEvidenceRef')),
   );
 });
 

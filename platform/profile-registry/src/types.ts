@@ -48,6 +48,12 @@ export interface AdmissionContract {
   activatedBy: string | null;
   testRunId: string | null;
   isolationEvidenceRef: string | null;
+  providerLifecycleEvidenceRef: string | null;
+  accountBindingEvidenceRef: string | null;
+  webhookEvidenceRef: string | null;
+  reconciliationEvidenceRef: string | null;
+  entitlementEvidenceRef: string | null;
+  auditEvidenceRef: string | null;
   rollbackProfileVersion: number | null;
 }
 

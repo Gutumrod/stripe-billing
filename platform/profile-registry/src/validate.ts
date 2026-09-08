@@ -40,7 +40,18 @@ export function collectActivationIssues(profile: ProductBillingProfile, options:
   if (profile.status !== 'pending_validation') issues.push('profile must be pending_validation before activation');
   if (profile.environment === 'live' && !options.allowLive) issues.push('live activation is not authorized');
   if (!profile.admission.testRunId) issues.push('admission.testRunId is required');
-  if (!profile.admission.isolationEvidenceRef) issues.push('admission.isolationEvidenceRef is required');
+  const requiredEvidenceRefs: Array<[string, string | null]> = [
+    ['isolationEvidenceRef', profile.admission.isolationEvidenceRef],
+    ['providerLifecycleEvidenceRef', profile.admission.providerLifecycleEvidenceRef],
+    ['accountBindingEvidenceRef', profile.admission.accountBindingEvidenceRef],
+    ['webhookEvidenceRef', profile.admission.webhookEvidenceRef],
+    ['reconciliationEvidenceRef', profile.admission.reconciliationEvidenceRef],
+    ['entitlementEvidenceRef', profile.admission.entitlementEvidenceRef],
+    ['auditEvidenceRef', profile.admission.auditEvidenceRef],
+  ];
+  for (const [field, ref] of requiredEvidenceRefs) {
+    if (!ref || ref.startsWith('pending://') || ref.startsWith('PENDING')) issues.push(`admission.${field} is required`);
+  }
   if (options.previousActiveVersion !== null && profile.admission.rollbackProfileVersion !== options.previousActiveVersion) {
     issues.push(`rollbackProfileVersion must reference current active version ${options.previousActiveVersion}`);
   }

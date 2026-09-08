@@ -52,6 +52,14 @@ export const lk01TestProfile: ProductBillingProfile = {
   },
   admission: {
     registeredAt: '2026-09-08T00:00:00.000Z', activatedAt: null, activatedBy: null,
-    testRunId: null, isolationEvidenceRef: null, rollbackProfileVersion: null,
+    testRunId: 'billing-matrix-2026-09-08',
+    isolationEvidenceRef: 'docs/platform/billing-core/MULTI-PROFILE-CONCURRENCY-EVIDENCE-2026-09-08.md',
+    providerLifecycleEvidenceRef: 'docs/platform/billing-core/STRIPE-TEST-PROVIDER-MATRIX-EVIDENCE-2026-09-08.md',
+    accountBindingEvidenceRef: null,
+    webhookEvidenceRef: null,
+    reconciliationEvidenceRef: null,
+    entitlementEvidenceRef: null,
+    auditEvidenceRef: null,
+    rollbackProfileVersion: null,
   },
 };

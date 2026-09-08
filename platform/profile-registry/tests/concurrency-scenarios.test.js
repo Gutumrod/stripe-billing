@@ -12,6 +12,12 @@ function activateFixture(registry, source, stripeProductId, prices) {
   profile.providerMappings.stripe.test.stripePriceIds = { ...prices };
   profile.admission.testRunId = `local-fixture-${profile.productCode}`;
   profile.admission.isolationEvidenceRef = `fixture://isolation/${profile.productCode}`;
+  profile.admission.providerLifecycleEvidenceRef = `fixture://provider/${profile.productCode}`;
+  profile.admission.accountBindingEvidenceRef = `fixture://account-binding/${profile.productCode}`;
+  profile.admission.webhookEvidenceRef = `fixture://webhook/${profile.productCode}`;
+  profile.admission.reconciliationEvidenceRef = `fixture://reconciliation/${profile.productCode}`;
+  profile.admission.entitlementEvidenceRef = `fixture://entitlement/${profile.productCode}`;
+  profile.admission.auditEvidenceRef = `fixture://audit/${profile.productCode}`;
   registry.register(profile);
   return registry.activate(profile.productId, 'test', profile.profileVersion, 'local-test-harness');
 }
