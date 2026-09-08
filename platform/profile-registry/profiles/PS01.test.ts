@@ -1,0 +1,63 @@
+import type { ProductBillingProfile } from '../src/types';
+
+export const ps01TestProfile: ProductBillingProfile = {
+  schemaVersion: 1,
+  productId: 'prd_c3a024781f4e4079815b2399cfe330e0',
+  productCode: 'PS01',
+  displayName: 'Pawstia PMS',
+  environment: 'test',
+  profileVersion: 1,
+  status: 'pending_validation',
+  billingModels: ['subscription'],
+  currency: {
+    code: 'THB',
+    minorUnitExponent: 2,
+    allowedMinorUnits: { min: 100, max: 100000000, increment: 1 },
+  },
+  commercialPolicy: {
+    policyRef: 'docs/platform/billing-core/profiles/PS01.md',
+    refundPolicyRef: 'pending://ps01/refund-policy',
+    taxPolicyRef: null,
+    priceChangePolicyRef: 'pending://ps01/price-change-policy',
+  },
+  plans: [{
+    planId: 'founding-c2',
+    packageRef: 'PS01-FOUNDING-C2',
+    model: 'subscription',
+    amountMinor: 99000,
+    interval: 'month',
+    trialRef: null,
+    freeTierRef: null,
+    graceRef: 'pending://ps01/grace-policy',
+    retryDunningRef: 'pending://ps01/dunning-policy',
+    entitlementKeys: ['commercial_access'],
+  }],
+  rails: {
+    cardSubscription: { enabled: true, autoRenew: true },
+    promptpayManual: { enabled: false, autoRenew: false, expiryPolicyRef: null },
+    cardOneTime: { enabled: false, autoRenew: false },
+  },
+  entitlementAdapter: {
+    adapterId: 'ps01-commercial-entitlement',
+    contractVersion: 1,
+    mode: 'push',
+    ingressRef: 'pending://ps01/billing-entitlement-ingress',
+    snapshotRef: null,
+    ttlSeconds: null,
+    signingKeyRef: 'pending://vault/ps01-billing-signing-key',
+  },
+  providerMappings: {
+    stripe: {
+      test: { stripeProductId: null, stripePriceIds: {} },
+      live: { stripeProductId: null, stripePriceIds: {} },
+    },
+  },
+  admission: {
+    registeredAt: '2026-09-08T00:00:00.000Z',
+    activatedAt: null,
+    activatedBy: null,
+    testRunId: null,
+    isolationEvidenceRef: null,
+    rollbackProfileVersion: null,
+  },
+};
