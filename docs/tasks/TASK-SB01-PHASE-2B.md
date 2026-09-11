@@ -8,11 +8,11 @@ Repository: Gutumrod/stripe-billing
 Workspace: D:\AI-Workspace\runtime\worktrees\sb01-central-billing-20260909
 Branch / Worktree: work/sb01-central-billing-pc-20260911
 Base Commit: 049b34aedf97b6b42ed97dae8d0c833513efee3c
-Current Commit: see exact Phase 2B material commit recorded after this checkpoint is persisted
+Current Commit: 3f62fab6c97010bd5311684efc8d7e9d3eece475
 Owner: Free
 Commander: Sol
 Current Worker: NONE
-Current Checkpoint: CP-04 PHASE 2B COMPLETE — HOUSE/SOL REVIEW REQUIRED
+Current Checkpoint: CP-04 PHASE 2B COMPLETE â€” HOUSE/SOL REVIEW REQUIRED
 Latest Dispatch: N/A
 Dispatch Revision: N/A
 Expected Stop: HOUSE/SOL REVIEW BEFORE PHASE 2C
