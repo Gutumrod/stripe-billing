@@ -1,6 +1,6 @@
 # TASK-SB01-PHASE-2B
 
-Status: READY_FOR_HOUSE_SOL_REVIEW
+Status: INDEPENDENT_QA_IN_PROGRESS
 Workflow ID: WF-DEV-01
 Workflow Spec Version: 1.1.0
 Runtime Procedure: N/A
@@ -8,42 +8,48 @@ Repository: Gutumrod/stripe-billing
 Workspace: D:\AI-Workspace\runtime\worktrees\sb01-central-billing-20260909
 Branch / Worktree: work/sb01-central-billing-pc-20260911
 Base Commit: 049b34aedf97b6b42ed97dae8d0c833513efee3c
-Current Commit: 3f62fab6c97010bd5311684efc8d7e9d3eece475
+Review Target Commit: 3f62fab6c97010bd5311684efc8d7e9d3eece475
+Checkpoint Head: 4caef761df984bd7327f3062012bef881d375797
+Current Commit: 0e9c77be9bcbb53a460c7f727be9fc4053814fd1
 Owner: Free
 Commander: Sol
-Current Worker: NONE
-Current Checkpoint: CP-04 PHASE 2B COMPLETE â€” HOUSE/SOL REVIEW REQUIRED
-Latest Dispatch: N/A
-Dispatch Revision: N/A
-Expected Stop: HOUSE/SOL REVIEW BEFORE PHASE 2C
-Next Allowed Action: House/Sol reviews Phase 2B evidence and exact Git revision; no Phase 2C execution before explicit authorization.
+Current Worker: Codex / Independent QA Verifier
+Current Checkpoint: CP-05 INDEPENDENT QA / VERIFY
+Latest Dispatch: docs/dispatch/AGENT-DISPATCH-SB01-PHASE-2B-INDEPENDENT-QA-CODEX-2026-09-11.md
+Dispatch Revision: 0e9c77be9bcbb53a460c7f727be9fc4053814fd1
+Expected Stop: READY FOR HOUSE/SOL REVIEW â€” INDEPENDENT QA COMPLETE
+Next Allowed Action: Execute read-only Independent QA against exact material revision; no Phase 2C execution.
 
 ## Objective
-Derive, apply, and prove the SB01 runtime DB contract in WSTERA LAB only.
+Derive, apply, and prove the SB01 runtime DB contract in WSTERA LAB only, then obtain independent QA before Phase 2C authority can be considered.
 
 ## Source of Truth
 - Phase 2B brief: House `BRIEF-SB01-PHASE-2B-DB-CONTRACT-2026-09-11.md`
-- Runtime source: `platform/runtime/src/db.ts`
-- Evidence: `docs/platform/billing-core/EVIDENCE-SB01-PHASE-2B-DB-CONTRACT-2026-09-11.md`
-
+- House/Sol review authority: House revision `d72c7734ab7a36889b9bdd7153a007f14f22deeb`
+- Runtime source: exact material commit `3f62fab6c97010bd5311684efc8d7e9d3eece475`
+- Independent QA dispatch: latest dispatch path above
 ## Checkpoints
 | Checkpoint | Status | Worker | Dispatch / Evidence | Stop / Result |
 |---|---|---|---|---|
 | CP-01 Flow Selection | PASS | Sol | WF-DEV-01 v1.1.0 | bounded Phase 2B |
 | CP-02 Brief Lock | PASS | Sol | House Phase 2B brief | ENTRY PASS |
-| CP-03 DB Contract + LAB Proof | PASS | Sol | Phase 2B evidence | LAB applied/verified |
-| CP-04 House/Sol Review | HOLD | NONE | exact Git checkpoint | no 2C before review |
+| CP-03 DB Contract + LAB Proof | TECHNICALLY_COMPLETE | Sol | Phase 2B evidence | independent QA still required |
+| CP-04 House/Sol Review | HOLD | House/Sol | House review `d72c773` | Independent QA required |
+| CP-05 Independent QA / Verify | IN_PROGRESS | Codex | canonical dispatch packet | stop for House/Sol review |
 
 ## Evidence
-See Phase 2B evidence document and migration/test/rollback artifacts in this revision.
+- Material evidence: `docs/platform/billing-core/EVIDENCE-SB01-PHASE-2B-DB-CONTRACT-2026-09-11.md`
+- Migration: `docs/platform/billing-core/migrations/0002_multi_product_billing_runtime.sql`
+- Rollback: `docs/platform/billing-core/migrations/0002_multi_product_billing_runtime.rollback.sql`
+- DB contract test: `platform/runtime/tests/phase2b-db-contract.sql`
 
 ## Decisions
 - Keep `0001` historical baseline unchanged.
 - `0002` is forward-only runtime extension.
-- Project-wide pre-existing `local_service` advisor findings are recorded but not changed by SB01.
+- Independent QA is read-only and cannot self-authorize Phase 2C.
 
 ## Blockers
-None inside Phase 2B. Phase 2C is authority-blocked pending House/Sol review.
+Phase 2C remains authority-blocked until independent QA returns and House/Sol reviews it.
 
 ## Next Action
-House/Sol review only. Do not execute Phase 2C without explicit authorization.
+Codex independent QA only. No Phase 2C, deploy, provider mutation, profile activation or product write.
