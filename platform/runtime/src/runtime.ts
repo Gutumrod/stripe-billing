@@ -216,7 +216,8 @@ export class CentralBillingRuntime {
       profileVersion: authority.profile.profileVersion,
       reservationToken,
     });
-    if (!mapping.providerCustomerId) {
+    let providerCustomerId = mapping.providerCustomerId;
+    if (!providerCustomerId) {
       const customerKey = await deriveIdempotencyKey([
         authority.credential.environment, authority.credential.productId, accountId,
         String(authority.profile.profileVersion), 'stripe-customer',
@@ -229,6 +230,7 @@ export class CentralBillingRuntime {
       }, customerKey);
       await this.db.completeCustomerReservation(mapping.id, reservationToken, customer.id);
       mapping = { ...mapping, state: 'ready', providerCustomerId: customer.id, reservationToken: null };
+      providerCustomerId = customer.id;
     }
     const checkoutKey = await deriveIdempotencyKey([
       authority.credential.environment, authority.credential.productId, accountId,
@@ -236,7 +238,7 @@ export class CentralBillingRuntime {
     ]);
     try {
       const checkout = await this.stripe.createSubscriptionCheckout({
-        customerId: mapping.providerCustomerId,
+        customerId: providerCustomerId,
         priceId,
         successUrl,
         cancelUrl,

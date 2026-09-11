@@ -1,6 +1,8 @@
 import postgres, { Sql } from 'postgres';
 import { BillingEnvironment, BillingRuntimeError, CredentialBinding, SignedEntitlementTransition } from './types';
 
+type JsonRecord = Record<string, postgres.JSONValue>;
+
 export interface OperationState {
   id: string;
   status: string;
@@ -123,7 +125,7 @@ export class BillingDb {
     };
   }
 
-  async completeOperation(operationId: string, providerObjectId: string | null, response: Record<string, unknown>): Promise<void> {
+  async completeOperation(operationId: string, providerObjectId: string | null, response: JsonRecord): Promise<void> {
     const table = this.table('runtime_operations');
     await this.sql`
       update ${table}
@@ -244,7 +246,7 @@ export class BillingDb {
     accountId?: string | null;
     providerObjectId?: string | null;
     providerEventId?: string | null;
-    details?: Record<string, unknown>;
+    details?: JsonRecord;
   }): Promise<void> {
     const table = this.table('runtime_audit_events');
     await this.sql`
