@@ -18,6 +18,8 @@ Current Worker: `Sol / Launch Preparation`
 Current Checkpoint: `CP-00 LONG-RUN LAUNCH PACKET MATERIALIZATION`
 Expected Stop: `OWNER LAUNCH REQUIRED`
 Next Allowed Action: Owner explicitly launches this packet through Hermes. Hermes must run PRE-01 fail-closed preflight before releasing substantive work.
+Initial Materialized Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-AGY-2026-09-12.md`
+Initial Dispatch Revision: `1b5ca31711aa362481aefec840576af188389f61`
 
 ## Canonical Source of Truth
 
@@ -68,4 +70,4 @@ No silent retry, agent substitution, strategy mutation, unlimited loops, merge, 
 
 This Task is prepared but not running. Owner launch authorizes Hermes orchestration and PRE-01 only. PRE-01 must pin the current branch/revision, exact runtime path/version/hash, executor readiness, allowed/prohibited paths, context modes, stage graph, and failure behavior = STOP.
 
-First substantive dispatch after PRE-01 PASS is the fresh AGY LR-2C dispatch referenced by this Task once its commit is pinned.
+First substantive dispatch after PRE-01 PASS is `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-AGY-2026-09-12.md` at dispatch revision `1b5ca31711aa362481aefec840576af188389f61`. Hermes must not release it before PRE-01 PASS and explicit Owner launch.
