@@ -14,8 +14,10 @@ Tracking: `origin/feature/central-billing-phase2-runtime`
 AGY Returned Revision (Base): `f22b01af309a769c642a3318c56c841fb88d82c0`
 Qwen Expansion Commit SHA: `7a407cda78e4f77a1b328dbcb8689fd8fde2bee5`
 Evidence SHA Pin (follow-up evidence-only commit): `b58e83be65e87e577994d1a8b75df5d29db067d2`
-Expected Stop: `READY FOR CODEX LR-2C INDEPENDENT QA`
-Actual Stop: `READY FOR CODEX LR-2C INDEPENDENT QA`
+Repair Base Revision (canonical QA target): `7a407cda78e4f77a1b328dbcb8689fd8fde2bee5`
+Repair Commit SHA (FIX-02/FIX-03 material): `e61a8f736e1d3077f550c4b597a157bcabf59293`
+Expected Stop: `READY FOR CODEX LR-2C INFORMED-VERIFY`
+Actual Stop: `SOL_OWNER_DECISION_REQUIRED (FIX-01 real-Test credentials unavailable; FIX-02/FIX-03 repaired and green)`
 
 ---
 
@@ -140,3 +142,84 @@ NONE. The conditional `platform/runtime/src/**` allowance was not used.
 ## 11. Checkpoint Stop
 
 `READY FOR CODEX LR-2C INDEPENDENT QA`
+
+---
+
+## 12. Repair Round (FIX_BY_QWEN route from canonical Codex QA) — 2026-09-12
+
+Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-QWEN-REPAIR-2026-09-12.md`
+Canonical QA: `docs/platform/billing-core/CODE-2-QA-REPORT-SB01-LR-2C-2026-09-12.md` (verdict `FIX_BY_QWEN`, reviewed material `7a407cd`, branch head `e102e3f`).
+
+### 12.1 Per-Finding Resolution
+
+**FIX-02 (High) — denied portal return URL durable side effect: REPAIRED.**
+- `platform/runtime/src/runtime.ts` (`handlePortal`): the portal return URL
+  allowlist (`this.returnUrl(authority.profile, 'portal', returnRef)`) is now
+  validated **before** `requestFingerprint`/`db.beginOperation`. A denied
+  arbitrary portal `return_ref` therefore throws `RETURN_REF_DENIED` before any
+  `/v1/portal` operation row, audit row, or provider call. The second
+  `returnUrl(...)` call inside the `try` block is unchanged behavior for valid
+  refs (idempotency semantics for valid portal requests preserved; `IDEMPOTENCY_CONFLICT`
+  path untouched).
+- `platform/runtime/tests/negative-authority-matrix.test.mjs` (test
+  "portal return_ref outside the allowlist fails closed"): now asserts for the
+  arbitrary portal return ref `https://evil.example/pwn`:
+  `portalOps.length === 0` (no `/v1/portal` operation row — replaces the prior
+  assertion that a `failed`/`RETURN_REF_DENIED` ledger row existed),
+  `mockDb.operations.size === 1` (only the setup checkout row exists), and zero
+  `portal.created` audit rows. Provider-object assertions (no new session,
+  no additional customer) unchanged.
+
+**FIX-03 (Low) — AGY evidence EOF blank line: REPAIRED.**
+- Removed the single introduced trailing blank line at EOF of
+  `docs/platform/billing-core/EVIDENCE-SB01-LR-2C-AGY-2026-09-12.md`
+  (whitespace-only; no content change; no fixture constant touched).
+
+**FIX-01 (High) — real WSTERA LAB / Stripe Test vertical-slice evidence: BLOCKED — `SOL_OWNER_DECISION_REQUIRED`.**
+- Probed the worker environment for the required Test-only credentials:
+  - `BILLING_DATABASE_URL` (WSTERA LAB `billing_core_staging` PostgreSQL): **not present**;
+    no `.env` file exists at repo root or `platform/runtime/` (probed
+    `.env`, `platform/runtime/.env`, `.env.local`, `platform/runtime/.env.local`).
+  - `STRIPE_SECRET_KEY` (Stripe **Test** key): **not present**.
+  - `STRIPE_WEBHOOK_SECRET` (Stripe Test webhook signing secret): **not present**.
+- `server.mjs` requires `BILLING_DATABASE_URL`, `STRIPE_SECRET_KEY`, and
+  `STRIPE_WEBHOOK_SECRET` as hard `required(...)` inputs; the Core HTTP
+  boundary cannot be started against WSTERA LAB without them. No other
+  credential source exists in this worker environment.
+- Per the dispatch critical constraint, the LR-2C acceptance bar was **not**
+  downgraded to mock-only and no credentials were fabricated. The exact
+  missing credentials are the three above (WSTERA LAB `billing_core_staging`
+  database URL; Stripe Test secret key; Stripe Test webhook secret), each
+  required to run the bounded real Test vertical slice.
+
+### 12.2 Repair Round Changed Files
+
+- `platform/runtime/src/runtime.ts` — FIX-02 allowlist-before-`beginOperation` ordering only.
+- `platform/runtime/tests/negative-authority-matrix.test.mjs` — FIX-02 denied-portal assertions only.
+- `docs/platform/billing-core/EVIDENCE-SB01-LR-2C-AGY-2026-09-12.md` — FIX-03 EOF whitespace only.
+- `docs/platform/billing-core/EVIDENCE-SB01-LR-2C-QWEN-2026-09-12.md` — this repair-round record.
+
+Fixture constants unchanged; no prohibited paths touched; no Phase 2D/2E/2F,
+Control Plane, BK01/MT01/PromptPay, migration, or dependency work.
+
+### 12.3 Repair Round Checks (exact results, from `e61a8f7`)
+
+1. `npm run build` (platform/runtime) — PASS, exit 0.
+2. `npm run typecheck` (platform/runtime) — PASS, exit 0.
+3. `npm test` (platform/runtime) — **42/42 PASS** (`# tests 42`, `# pass 42`, `# fail 0`), including the updated denied-portal test.
+4. `npm test` (platform/profile-registry) — **16/16 PASS**.
+5. `git diff --check` (working tree) — PASS.
+6. `git diff --check 6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895 e61a8f736e1d3077f550c4b597a157bcabf59293` — **PASS** (FIX-03 resolved; previously failed on the AGY evidence EOF line).
+7. `git diff --check 7a407cda78e4f77a1b328dbcb8689fd8fde2bee5 e61a8f736e1d3077f550c4b597a157bcabf59293` — PASS.
+8. Intended-diff inspection: exactly the four files above; no prohibited-path change; fixture constants unchanged (`TEST_ASSERTION_SECRET`, `LK01_ASSERTION_SECRET`, mock `sk_test_` constant untouched).
+9. No live/production mutation; no real Stripe/LAB calls executed (FIX-01 credentials unavailable).
+
+### 12.4 Repair Round Blockers / Untested Areas
+
+- FIX-01 real Test vertical slice: **not executed** — missing credentials listed in 12.1; requires Sol/Owner decision to provision `BILLING_DATABASE_URL` (WSTERA LAB `billing_core_staging`), `STRIPE_SECRET_KEY` (Test-only), and `STRIPE_WEBHOOK_SECRET` (Test-only) to the worker environment, or to explicitly re-scope LR-2C evidence.
+- Negative-authority matrix re-proof against real provider/LAB side-effect counts (QA acceptance item 6): blocked by the same missing credentials.
+- Deviation from dispatch: NONE (blocked path taken exactly as the dispatch prescribes for unavailable credentials).
+
+### 12.5 Repair Round Stop
+
+`SOL_OWNER_DECISION_REQUIRED` — FIX-02 and FIX-03 are repaired and all source checks are green at `e61a8f7`; FIX-01 real LAB/Stripe-Test evidence requires Sol/Owner credential provisioning before Codex `INFORMED-VERIFY` can close LR-2C.
