@@ -1,6 +1,6 @@
 # TASK-SB01-PHASE-2B
 
-Status: CLAUDE_R2_REMEDIATION_PREP
+Status: CLAUDE_R2_REMEDIATION_READY
 Workflow ID: WF-DEV-01
 Workflow Spec Version: 1.1.0
 Runtime Procedure: N/A
@@ -14,12 +14,13 @@ R2 Verdict Checkpoint: d6e5a30d419706dc3a405015158d0ff6ceb7568c
 Owner: Free
 Commander: Sol
 Current Worker: Claude / Remediation Agent
-Current Checkpoint: CP-08 R2 SQL QUALIFICATION REMEDIATION / DISPATCH PREP
+Current Checkpoint: CP-08 R2 SQL QUALIFICATION REMEDIATION / READY
 Latest House Review: House `docs/platform/billing-core/REVIEW-SB01-PHASE-2B-HOUSE-SOL-R2-2026-09-12.md` at `f9b05c9fbc2bf72d03d7a0d94c88259386c2a01c`
 Current House Brief: House `docs/platform/billing-core/BRIEF-SB01-PHASE-2B-R2-SQL-QUALIFICATION-REMEDIATION-2026-09-12.md` at `8ba86cea7930222ce3c7e1174933d9f569867063`
-Latest Dispatch: PENDING FRESH CLAUDE R2 REMEDIATION DISPATCH
+Latest Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-PHASE-2B-R2-SQL-QUALIFICATION-CLAUDE-2026-09-12.md`
+Dispatch Revision: `5b650442c0beb40cdeec58dae1c11dbc210c2eb4`
 Expected Stop: READY FOR HOUSE/SOL REVIEW R3
-Next Allowed Action: Create and pin one fresh Claude remediation dispatch for CP-08; then Claude may execute only that bounded dispatch. Phase 2C remains HOLD.
+Next Allowed Action: Claude executes only the fresh CP-08 dispatch pinned above, commits/pushes the bounded remediation, and stops at `READY FOR HOUSE/SOL REVIEW R3`. Phase 2C remains HOLD.
 
 ## Objective
 
@@ -31,16 +32,18 @@ Close only House/Sol R2 findings R2-F1 and R2-F2: make the shared outbox duplica
 - Workflow remains `WF-DEV-01 v1.1.0`.
 - Owner authorized the bounded R2 remediation round after House/Sol R2.
 - Claude is the remediation worker for this round.
+- Fresh dispatch `5b650442c0beb40cdeec58dae1c11dbc210c2eb4` is the sole execution authority for CP-08.
 - Builder may not approve its own result.
 - Phase 2C remains HOLD until House/Sol accepts Phase 2B closure.
 
 ## Source of Truth
 
 1. This Task checkpoint for current authority/checkpoint.
-2. House R2 review at House commit `f9b05c9fbc2bf72d03d7a0d94c88259386c2a01c`.
-3. House R2 remediation brief at House commit `8ba86cea7930222ce3c7e1174933d9f569867063`.
-4. Previous remediation report and exact remediation SHA `2cfdfaea25278294d26f66ee88947e0407645402`.
-5. Actual source/tests on the pinned branch/revision.
+2. Fresh dispatch `docs/dispatch/AGENT-DISPATCH-SB01-PHASE-2B-R2-SQL-QUALIFICATION-CLAUDE-2026-09-12.md` at `5b650442c0beb40cdeec58dae1c11dbc210c2eb4`.
+3. House R2 review at House commit `f9b05c9fbc2bf72d03d7a0d94c88259386c2a01c`.
+4. House R2 remediation brief at House commit `8ba86cea7930222ce3c7e1174933d9f569867063`.
+5. Previous remediation report and exact remediation SHA `2cfdfaea25278294d26f66ee88947e0407645402`.
+6. Actual source/tests on the pinned branch/revision.
 
 Do not infer scope from chat history.
 
@@ -55,7 +58,7 @@ Do not infer scope from chat history.
 | CP-05 Independent QA | COMPLETE | Claude | one Medium finding |
 | CP-06 First Lease Remediation | COMPLETE / RETURNED | Claude | `2cfdfae` |
 | CP-07 House/Sol Review R2 | REMEDIATE_SOURCE | Sol | R2-F1 SQL ambiguity + R2-F2 test gap |
-| CP-08 R2 SQL Qualification Remediation | DISPATCH_PREP | Claude | fresh dispatch required; stop `READY FOR HOUSE/SOL REVIEW R3` |
+| CP-08 R2 SQL Qualification Remediation | READY | Claude | dispatch `5b65044`; stop `READY FOR HOUSE/SOL REVIEW R3` |
 
 ## Locked Defect Set
 
@@ -91,4 +94,4 @@ Exact remediation SHA; branch/worktree; changed files; targeted regression resul
 
 ## Next Action
 
-Fresh Claude R2 remediation dispatch must be created and pinned before source execution.
+Claude executes only the pinned fresh dispatch and returns to House/Sol R3.
