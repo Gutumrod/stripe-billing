@@ -13,7 +13,7 @@ Branch: `work/sb01-central-billing-pc-20260911`
 Tracking: `origin/feature/central-billing-phase2-runtime`
 AGY Returned Revision (Base): `f22b01af309a769c642a3318c56c841fb88d82c0`
 Qwen Expansion Commit SHA: `7a407cda78e4f77a1b328dbcb8689fd8fde2bee5`
-Evidence SHA Pin (follow-up evidence-only commit): `PENDING_EVIDENCE_PIN_SHA`
+Evidence SHA Pin (follow-up evidence-only commit): `b58e83be65e87e577994d1a8b75df5d29db067d2`
 Expected Stop: `READY FOR CODEX LR-2C INDEPENDENT QA`
 Actual Stop: `READY FOR CODEX LR-2C INDEPENDENT QA`
 
