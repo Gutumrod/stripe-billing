@@ -3,6 +3,52 @@ import { BillingEnvironment, BillingRuntimeError, CredentialBinding, SignedEntit
 
 type JsonRecord = Record<string, postgres.JSONValue>;
 
+// Shared by claimWebhookEvent and enqueueReconciliation: on a duplicate dedupe_key, keep an
+// unexpired `processing` lease intact (don't hand the same job to a second worker) and keep
+// `dead_letter` fail-closed. Decision table mirrored by resolveOutboxConflict for testing.
+export const OUTBOX_LEASE_PRESERVING_CONFLICT_SET = `
+  status=case
+    when status='dead_letter' then 'dead_letter'
+    when status='processing' and lease_expires_at > now() then 'processing'
+    else 'pending'
+  end,
+  next_attempt_at=case
+    when status='dead_letter' then next_attempt_at
+    when status='processing' and lease_expires_at > now() then next_attempt_at
+    else now()
+  end,
+  lease_owner=case
+    when status='dead_letter' then lease_owner
+    when status='processing' and lease_expires_at > now() then lease_owner
+    else null
+  end,
+  lease_expires_at=case
+    when status='dead_letter' then lease_expires_at
+    when status='processing' and lease_expires_at > now() then lease_expires_at
+    else null
+  end,
+  updated_at=now()
+`;
+
+export interface OutboxConflictRow {
+  status: string;
+  leaseExpiresAt: Date | null;
+}
+
+// Pure mirror of OUTBOX_LEASE_PRESERVING_CONFLICT_SET's branches, kept in sync by hand; used by
+// tests/outbox-lease-conflict.test.mjs since the SQL itself needs a live database to execute.
+export function resolveOutboxConflict(current: OutboxConflictRow, now: Date): {
+  status: 'dead_letter' | 'processing' | 'pending';
+  preserveLease: boolean;
+} {
+  if (current.status === 'dead_letter') return { status: 'dead_letter', preserveLease: true };
+  const leaseActive = current.status === 'processing'
+    && current.leaseExpiresAt !== null
+    && current.leaseExpiresAt.getTime() > now.getTime();
+  if (leaseActive) return { status: 'processing', preserveLease: true };
+  return { status: 'pending', preserveLease: false };
+}
+
 export interface OperationState {
   id: string;
   status: string;
@@ -303,10 +349,7 @@ export class BillingDb {
             (provider_event_id, environment, product_id, account_id, profile_version, job_type,
              payload, status, dedupe_key, correlation_id)
            values ($1::uuid,$2,$3,$4,$5,'reconcile',$6::jsonb,'pending',$7,$8::uuid)
-           on conflict (dedupe_key) do update set
-             status=case when ${outboxTable}.status='dead_letter' then 'dead_letter' else 'pending' end,
-             next_attempt_at=case when ${outboxTable}.status='dead_letter' then ${outboxTable}.next_attempt_at else now() end,
-             lease_owner=null, lease_expires_at=null, updated_at=now()`,
+           on conflict (dedupe_key) do update set ${OUTBOX_LEASE_PRESERVING_CONFLICT_SET}`,
           [eventRow.id, input.mapping!.environment, input.mapping!.productId, input.mapping!.accountId,
            input.mapping!.profileVersion, JSON.stringify({ providerEventId: input.providerEventId,
              providerObjectId: input.providerObjectId, providerCustomerId: input.providerCustomerId }),
@@ -407,8 +450,7 @@ export class BillingDb {
       values (${input.environment}, ${input.productId}, ${input.accountId}, ${input.profileVersion},
               'reconcile', ${this.sql.json({ providerObjectId: input.providerSubscriptionId, reason: input.reason })},
               'pending', ${dedupeKey}, ${input.correlationId}::uuid)
-      on conflict (dedupe_key) do update set status='pending', next_attempt_at=now(), lease_owner=null,
-        lease_expires_at=null, updated_at=now()
+      on conflict (dedupe_key) do update set ${this.sql.unsafe(OUTBOX_LEASE_PRESERVING_CONFLICT_SET)}
     `;
   }
 
