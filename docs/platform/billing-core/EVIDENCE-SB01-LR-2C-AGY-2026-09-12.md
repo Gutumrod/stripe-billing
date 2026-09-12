@@ -13,7 +13,7 @@ Branch: `work/sb01-central-billing-pc-20260911`
 Tracking: `origin/feature/central-billing-phase2-runtime`
 Dispatch Base Revision: `ea9778e972c4ce1658c871d85f5841d344d99995`
 Preflight Launch HEAD: `adb2d6453664d4f74dbeeb41434c4f3cefc2fcff`
-Material Implementation Commit SHA: `e05ee3d45eff3718b91a31bcfba768b41bf5947b`
+Material Implementation Commit SHA: `f22b01af309a769c642a3318c56c841fb88d82c0`
 Expected Stop: `READY FOR QWEN LR-2C HANDOFF`
 Actual Stop: `READY FOR QWEN LR-2C HANDOFF`
 
