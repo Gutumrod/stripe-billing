@@ -1,6 +1,6 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `LR-2C QWEN COMPLETE — AWAITING CODEX INDEPENDENT QA`
+Status: `BLOCKED — LR-2C CODEX QA PROVENANCE FAILURE — OWNER DECISION REQUIRED`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.2.0`
 Runtime Procedure: `kanban-external-agent-dispatch v2.3.8`
@@ -14,23 +14,21 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `Qwen (LR-2C secondary worker — complete)`
-Current Checkpoint: `LR-2C QWEN PASS — deterministic gate PASS at combined revision`
-Expected Stop: `READY FOR CODEX LR-2C INDEPENDENT QA`
-Next Allowed Action: Hermes releases fresh Codex LR-2C `INDEPENDENT-QA` dispatch against exact combined LR-2C revision; Codex returns one routing verdict.
+Current Worker: `Codex (LR-2C head verifier — provenance fail-closed)`
+Current Checkpoint: `HOLD — LR-2C CODEX SECRET-DETECTED — not advanced`
+Expected Stop: `OWNER RECOVERY DECISION REQUIRED (LR-2C)`
+Next Allowed Action: Owner selects recovery policy (accept surviving QA report + route FIX_BY_QWEN | record recovery + rerun Codex INDEPENDENT-QA | hard-stop). No retry / no advance until then.
 
-## LR-2C QWEN State (persisted 2026-09-12)
+## LR-2C State After Codex QA Fail-Closed (persisted 2026-09-12)
 
-- PRE-01 Relay preflight: PASS (`docs/relay/PRE-01-SB01-LONG-RUN-2C-2F-2026-09-12.md`, commit `adb2d64`).
-- AGY LR-2C implement commit: `f22b01a`; evidence SHA defect resolved at `9001795` (code tree identical).
-- Qwen LR-2C base: AGY exact return `f22b01a`. `platform/runtime/src/**` untouched (deviation NONE).
-- Qwen expansion (material) commit: `7a407cd` — adds `platform/runtime/tests/negative-authority-matrix.test.mjs` (19 tests) + `docs/platform/billing-core/EVIDENCE-SB01-LR-2C-QWEN-2026-09-12.md`.
-- Qwen evidence SHA pin commits: `b58e83b` (pin to `7a407cd`), `e102e3f` (HEAD records pin).
-- Branch HEAD: `e102e3f7679202930cee995b8499b286b8125ab7`; parity `0/0` ahead/behind `origin/feature/central-billing-phase2-runtime`.
-- Qwen return stdout/provenance: `agent-qwen.stdout.txt` / `AGENT-RETURN-SB01-LR-2C-QWEN-2026-09-12.txt`, `agent-qwen.invocation.json`.
-- Deterministic gate (Hermes, at returned revision `e102e3f`): build PASS (exit 0); typecheck PASS; runtime tests 42/42 PASS (AGY 23 + Qwen 19); profile-registry 16/16 PASS; `git diff --check f22b01a..HEAD` clean; no prohibited path change.
-- Exact combined LR-2C revision for Codex QA (material): `7a407cd` (AGY `f22b01a` code + Qwen test/evidence expansion).
-- Note: Hermes ran named external executors AGY/Qwen direct (`direct_external_process`, `transport_model=none`) per packet's Commander-style file-based sequential mechanism; no kanban card tracking used.
+- PRE-01 Relay preflight: PASS (`adb2d64`).
+- AGY LR-2C implement commit `f22b01a` (evidence SHA defect resolved at `9001795`, code tree identical); Qwen expansion `7a407cd`; combined material revision `7a407cd`, branch HEAD `e102e3f`.
+- Deterministic gate PASS at returned revision (build/typecheck, runtime 42/42, registry 16/16, diff-check clean).
+- Codex INDEPENDENT-QA dispatch released (composite material `7a407cd` / HEAD `e102e3f`).
+- **Codex QA FAIL-CLOSED** with `DIRECT_EXECUTOR_SECRET_DETECTED:wrapper_log:codex-worker-<stamp>.stderr.log` — driver removed all provenance (invocation.json / stdout / stderr / wrapper-logs). QA report `CODE-2-QA-REPORT-SB01-LR-2C-2026-09-12.md` (20619 B) survived with verdict `FIX_BY_QWEN` and findings: High#1 no WSTERA LAB/Stripe-Test vertical-slice evidence; High#2 denied portal return-ref creates durable op/audit rows; Medium#3 replayed operation authority not fail-closed; Low#4 AGY evidence EOF whitespace.
+- Hermes persisted `docs/relay/CHAIN-FAILURE-SB01-LR-2C-CODEX-SECRET-DETECTED-2026-09-12.md` (commit `ec7aa2f`).
+- No silent retry, no stage advance, no new worker commit. Branch parity at dispatch commit `ec7aa2f` `0/0` ahead/behind `origin/feature/central-billing-phase2-runtime`.
+- Recovery policy: Owner decision required. Hermes does not accept the surviving QA report as canonical release evidence without Owner recovery decision.
 Initial Materialized Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-AGY-2026-09-12.md`
 Initial Dispatch Revision: `1b5ca31711aa362481aefec840576af188389f61`
 
