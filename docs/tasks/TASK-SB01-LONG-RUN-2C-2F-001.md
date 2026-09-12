@@ -1,6 +1,6 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `LR-2C FAIL-CLOSED — AWAITING REAL TEST CREDS (STRIPE_WEBHOOK_SECRET + BILLING_DATABASE_URL) — HOLD`
+Status: `LR-2C FIX-01 — REAL TEST CREDS READY — AWAITING QWEN DISPATCH`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.2.0`
 Runtime Procedure: `kanban-external-agent-dispatch v2.3.8`
@@ -14,40 +14,26 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `Hermes (clerk) — fail-closed awaiting provisioned real TEST creds`
-Current Checkpoint: `HOLD — FIX-01 requires real STRIPE_WEBHOOK_SECRET + canonical WSTERA LAB BILLING_DATABASE_URL`
-Expected Stop: `OWNER/SOL: provision + verify the two TEST creds, then continue Qwen FIX-01`
-Next Allowed Action: No Qwen dispatch, no re-scope, no mock-only downgrade until both real TEST creds are provisioned and Hermes has verified them (connectivity + signature) fail-closed.
+Current Worker: `Qwen (FIX-01 real TEST vertical-slice — dispatch ready)`
+Current Checkpoint: `LR-2C FIX-01 — REAL TEST CREDS READY + VERIFIED`
+Expected Stop: `READY FOR QWEN FIX-01 REAL VERTICAL-SLICE DISPATCH`
+Next Allowed Action: Hermes releases fresh Qwen FIX-01 dispatch on exact current HEAD; after Qwen returns + deterministic gate PASS, dispatches fresh Codex verification.
 
-## LR-2C Owner Decision (2026-09-12, reaffirmed)
+## LR-2C FIX-01 CREDENTIAL READINESS (verified fail-closed, 2026-09-12)
 
-Owner decided **A — KEEP REAL TEST VERTICAL-SLICE**:
-- Do NOT re-scope FIX-01 to mock-only.
-- Keep LR-2C fail-closed until the real TEST-only `STRIPE_WEBHOOK_SECRET` and the canonical WSTERA LAB
-  `BILLING_DATABASE_URL` are provisioned AND verified.
-- Do NOT fabricate, infer, or persist secrets in Git/logs/evidence.
-- Once both credentials are valid: continue Qwen FIX-01 on the real vertical slice, run deterministic
-  gates, then fresh Codex verification on the exact returned revision.
+All required TEST-only credentials verified against live system + canonical vault `D:\AI-Workspace\.secrets\keys.txt`:
 
-## Credential audit (Hermes, real, no fabrication)
+1. **`BILLING_DATABASE_URL`** — CONNECT PASS. Read-only probe via WSTERA LAB `aws-1-ap-southeast-1.pooler.supabase.com`: `CONNECT_OK row0={"ok":1}`; `billing_core_staging` and `billing_core` each 16 tables (0001+0002 migrations applied). DSN read from vault (owner-provisioned), not inferred; temp DSN removed after probe.
+2. **Stripe TEST key** — PRESENT & correct: `sk_test_...` matching pinned `acct_1U2L8zHB4GRCffd9` (matrix evidence). Test only, livemode=false expected.
+3. **`STRIPE_WEBHOOK_SECRET`** — PRESENT, real (70 chars, `whsec_0c9...`), NOT placeholder. Owner provisioned 2026-09-12 (registry row `STRIPE__WSTERA_PRODUCTION__SB01_CENTRAL_BILLING__TEST__WEBHOOK_SECRET`).
+4. **Stripe listener PID 16168** — ALIVE, command line confirms `stripe.exe listen --forward-to http://127.0.0.1:8787/webhooks/stripe --events checkout.session.completed,...`. Forward target is the Core HTTP webhook route.
+5. No Live Stripe, no production mutation, no mock-only downgrade.
 
-Checked against canonical vault `D:\AI-Workspace\.secrets\keys.txt` and live probes:
-- `STRIPE_SECRET_KEY` (Test) — PRESENT & matches pinned `acct_1U2L8zHB4GRCffd9` (matrix evidence).
-- `STRIPE_WEBHOOK_SECRET` (Test) — **ABSENT / placeholder**: vault line = comment
-  `STRIPE_WEBHOOK_SECRET_BOOKING2= -- not issued yet. Generated when the webhook endpoint is...`.
-- `BILLING_DATABASE_URL` (WSTERA LAB) — **no canonical DSN in vault**; a DSN assembled from
-  `postgres.ykxlqnshaaxmzzocpjlj` did NOT connect (`ENOTFOUND tenant/user ... not found`).
-- Hermes did NOT commit/copy any secret; temp DSN removed after probe.
+## LR-2C State (persisted)
 
-Per Owner decision, Hermes remains fail-closed and will NOT dispatch Qwen FIX-01 until a real
-`STRIPE_WEBHOOK_SECRET` and a connectivity-verified canonical `BILLING_DATABASE_URL` are provided.
-
-## Blocked artifacts
-
-- FIX-02/FIX-03 already repaired + gate green (build/typecheck/runtime 42-42/registry 16-16/diff-check
-  clean at `6309a08`); repair material `e61a8f7`.
-- Fresh canonical Codex INDEPENDENT-QA (full provenance) verdict `FIX_BY_QWEN` (report 15:55).
-- FIX-01 remains open pending the two real TEST creds above.
+- PRE-01 preflight PASS (`adb2d64`); AGY implement `f22b01a`; Qwen expansion `7a407cd`; canonical Codex INDEPENDENT-QA `FIX_BY_QWEN` (report 15:55); Qwen repair FIX-02/FIX-03 done + gate green (`6309a08`).
+- FIX-01 remains open, now unblocked by provisioned real TEST creds.
+- Branch parity `0/0` vs `origin/work/sb01-central-billing-pc-20260911` at HEAD `dc9d5cf`. No new task created; this resumes Task SB01-LONG-RUN-2C-2F-001.
 Initial Materialized Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-AGY-2026-09-12.md`
 Initial Dispatch Revision: `1b5ca31711aa362481aefec840576af188389f61`
 
