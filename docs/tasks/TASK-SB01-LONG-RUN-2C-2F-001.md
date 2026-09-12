@@ -1,6 +1,6 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `BLOCKED — LR-2C FIX-01 QWEN REAL-SLICE FAILED x2 (exit 55) — RECOVERY DECISION REQUIRED`
+Status: `LR-2C FIX-01 — QWEN EXIT-55 DIAGNOSTIC COMPLETE (executor path FAIL) — RUNTIME REMEDIATION REQUIRED`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.2.0`
 Runtime Procedure: `kanban-external-agent-dispatch v2.3.8`
@@ -14,31 +14,34 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `(FIX-01 real-slice failed — no Qwen evidence)`
-Current Checkpoint: `FIX-01 QWEN REAL-SLICE FAILED x2 (exit 55) — no evidence/provenance produced`
-Expected Stop: `OWNER/SOL: recovery decision for FIX-01 (A retry | B diagnose exit-55 | C hard-stop)`
-Next Allowed Action: Owner selects recovery path. Hermes does NOT silently retry a material stage failure.
+Current Worker: `(executor remediation hold — no FIX-01 retry)`
+Current Checkpoint: `QWEN EXIT-55 DIAGNOSTIC COMPLETE — executor path FAIL (ConPTY/AttachConsole)`
+Expected Stop: `SOL decides runtime remediation then release decision for FIX-01`
+Next Allowed Action: Sol approves bounded runtime remediation of the Qwen Windows executor console/pty
+attachment, then trivial qwen probe through dee.execute; only after that a fresh Qwen FIX-01 (Sol release).
+No auto-retry; no LR-2D advance.
 
-## LR-2C FIX-01 State After Qwen Exit-55 (verified, 2026-09-12)
+## QWEN EXIT-55 DIAGNOSTIC RESULT (deterministic, 2026-09-12, Recovery B)
 
-- Credentials READY + verified (Hermes): BILLING_DATABASE_URL connect PASS; sk_test_ present;
-  whsec_ present; stripe listener PID 16168 alive forwarding to 8787.
-- **Run 1** via dee.execute -> DIRECT_EXECUTOR_EXIT:agent-qwen:55 (worker exited before work); no evidence, no commit.
-- **Run 2** wrapper-direct diagnostic -> qwen worker confirmed creds present, began real-slice, ended without
-  full output (probe.out.txt = 0 bytes) or commit. A real Stripe TEST/LAB mutation may have been partially
-  started before the worker ended; Hermes did NOT execute further mutations (fail-closed).
-- No FIX-01 evidence/commit; HEAD `79df229`; `run-sb01-lr2c-real-slice.mjs` untracked (has known /v1/v1/events
-  double-prefix bug Qwen identified but did not finish committing).
-- Chain-failure record: `docs/relay/CHAIN-FAILURE-SB01-LR-2C-FIX01-QWEN-EXIT-55-2026-09-12.md` (commit `79df229`).
-- FIX-02/FIX-03 already repaired + gate green (`6309a08`). FIX-01 remains open.
-- Root cause of exit 55 undetermined (both runs fail on qwen process, not creds).
+- Trivial agent-qwen invocation via canonical trusted-repo execution path: **WRAPPER_EXIT 55**.
+- stderr confirmed root cause: `@lydell/node-pty-win32-x64/lib/conpty_console_list_agent.js:13`
+  `getConsoleProcessList(shellPid)` -> `Error: AttachConsole failed` -> qwen abort exit 55.
+- Cause: relay executor spawns qwen with `CREATE_NO_WINDOW` (headless, no console); qwen's ConPTY
+  console-list agent requires an attached Windows console.
+- NOT creds / NOT FIX-01 source / NOT secret-scan. Matches Owner clue
+  `lydell/node-pty-win32-x64` / `AttachConsole failed`.
+- No mutation, no FIX-01 source/evidence touched, no untracked file deleted, no agent fallback.
+- Per Recovery B: executor FAIL -> persist blocker and stop FIX-01 for runtime remediation before retry.
+- Diagnostic record: `docs/relay/DIAGNOSTIC-SB01-LR-2C-QWEN-EXIT55-2026-09-12.md` (commit `818b656`).
 
-## Recovery options (Owner / Sol)
+## Recommended next route (to Sol)
 
-- **A**: fresh Qwen FIX-01 via canonical driver, reuse/fix `run-sb01-lr2c-real-slice.mjs` (/v1/v1/events bug),
-  run real slice, commit evidence; optionally clean partial Stripe/LAB rows first if Owner authorizes.
-- **B**: diagnose qwen exit-55 root cause (bounded trivial trusted-repo invocation, capture stderr) before retry.
-- **C**: treat repeated exit-55 as SOL_OWNER_DECISION_REQUIRED and stop FIX-01 pending deeper executor investigation.
+1. Approve bounded remediation of the Qwen Windows executor console/pty attachment (canonical target
+   `direct_external_executors._run` `CREATE_NO_WINDOW` for agent-qwen, or a wrapper pty/console allocation),
+   then re-run a trivial readonly qwen probe through dee.execute.
+2. Only after the executor probe passes, re-dispatch a fresh real Qwen FIX-01 (Sol release decision; no auto-retry).
+3. LR-2D stays gated behind LR-2C PASS. Chain-failure record:
+   `docs/relay/CHAIN-FAILURE-SB01-LR-2C-FIX01-QWEN-EXIT-55-2026-09-12.md`.
 Initial Materialized Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-AGY-2026-09-12.md`
 Initial Dispatch Revision: `1b5ca31711aa362481aefec840576af188389f61`
 
