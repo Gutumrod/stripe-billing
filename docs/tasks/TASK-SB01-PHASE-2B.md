@@ -1,6 +1,6 @@
-# TASK-SB01-PHASE-2B
+﻿# TASK-SB01-PHASE-2B
 
-Status: READY_FOR_HOUSE_SOL_REVIEW
+Status: REMEDIATION_DISPATCH_REQUIRED
 Workflow ID: WF-DEV-01
 Workflow Spec Version: 1.1.0
 Runtime Procedure: N/A
@@ -9,60 +9,63 @@ Workspace: D:\AI-Workspace\runtime\worktrees\sb01-central-billing-20260909
 Branch / Worktree: work/sb01-central-billing-pc-20260911
 Base Commit: 049b34aedf97b6b42ed97dae8d0c833513efee3c
 Review Target Commit: 3f62fab6c97010bd5311684efc8d7e9d3eece475
-Checkpoint Head: 4caef761df984bd7327f3062012bef881d375797
-Current Commit: 1fbbffb1aed3f9c51d947f461e2d539f5eb6417a
+Returned Checkpoint Commit: 8c9d8a576f8076299978b401806e7fcf826337c8
+Current Commit: 8c9d8a576f8076299978b401806e7fcf826337c8
 Owner: Free
 Commander: Sol
-Current Worker: House/Sol Review
-Current Checkpoint: CP-05 INDEPENDENT QA COMPLETE / RETURNED TO HOUSE-SOL REVIEW
-Latest Dispatch: docs/dispatch/AGENT-DISPATCH-SB01-PHASE-2B-INDEPENDENT-QA-CLAUDE-2026-09-11.md
-Dispatch Revision: 02f40172ea5795a52c4507aa82dbabb1f23ee29d
-Expected Stop: HOUSE/SOL REVIEW DECISION — PHASE 2C REMAINS HOLD
-Next Allowed Action: House/Sol review Claude verifier report and disposition the Medium outbox-lease finding; no Phase 2C execution.
+Current Worker: Claude / Remediation Agent
+Current Checkpoint: CP-06 OUTBOX ACTIVE-LEASE REMEDIATION / DISPATCH REQUIRED
+Latest Dispatch: PENDING — fresh Claude remediation dispatch required; Independent-QA dispatch is closed and must not be reused
+Dispatch Revision: PENDING
+Expected Stop: READY FOR HOUSE/SOL REVIEW R2
+Next Allowed Action: Create and pin a fresh Claude remediation dispatch; no material remediation before the dispatch gate passes.
 
 ## Objective
 
-Derive, apply, and prove the SB01 runtime DB contract in WSTERA LAB only, then obtain independent QA before Phase 2C authority can be considered.
+Close only the House/Sol-rejected Medium outbox active-lease race from Phase 2B, preserve all existing Phase 2B isolation/idempotency contracts, and return exact remediation evidence for House/Sol R2. Phase 2C remains HOLD.
 
 ## Source of Truth
 
-- Phase 2B brief: House `BRIEF-SB01-PHASE-2B-DB-CONTRACT-2026-09-11.md`
-- House/Sol review authority: House revision `d72c7734ab7a36889b9bdd7153a007f14f22deeb`
-- Runtime source: exact material commit `3f62fab6c97010bd5311684efc8d7e9d3eece475`
-- Independent QA dispatch: latest dispatch path above
+- Canonical handoff: House `docs/platform/billing-core/HANDOFF-SB01-PHASE-2B-OUTBOX-LEASE-REMEDIATION-2026-09-12.md` at `5862bf2d58409650572cf258ee0c7bce26eb207a`.
+- House disposition review: `docs/platform/billing-core/REVIEW-SB01-PHASE-2B-CLAUDE-QA-DISPOSITION-2026-09-12.md` at `1f000a69182a689fc2f2a8ed54b8c686455dabc4`.
+- House remediation brief: `docs/platform/billing-core/BRIEF-SB01-PHASE-2B-OUTBOX-LEASE-REMEDIATION-2026-09-12.md` at `5a4f9c11166434b5f831ed27799d90271b8ea6f7`.
+- Claude QA report: `docs/platform/billing-core/REPORT-CLAUDE-SB01-PHASE-2B-INDEPENDENT-QA-2026-09-12.md` at report commit `1fbbffb1aed3f9c51d947f461e2d539f5eb6417a`.
+- Exact implementation target reviewed: `3f62fab6c97010bd5311684efc8d7e9d3eece475`.
+- Returned SB01 checkpoint baseline: `8c9d8a576f8076299978b401806e7fcf826337c8`.
+
 ## Checkpoints
 
 | Checkpoint | Status | Worker | Dispatch / Evidence | Stop / Result |
 |---|---|---|---|---|
 | CP-01 Flow Selection | PASS | Sol | WF-DEV-01 v1.1.0 | bounded Phase 2B |
-| CP-02 Brief Lock | PASS | Sol | House Phase 2B brief | ENTRY PASS |
-| CP-03 DB Contract + LAB Proof | TECHNICALLY_COMPLETE | Sol | Phase 2B evidence | independent QA still required |
-| CP-04 House/Sol Review | RETURNED | House/Sol | Claude QA report `1fbbffb` | disposition Medium finding; Phase 2C HOLD |
-| CP-05 Independent QA / Verify | COMPLETE | Claude | `docs/platform/billing-core/REPORT-CLAUDE-SB01-PHASE-2B-INDEPENDENT-QA-2026-09-12.md` | PASS WITH ONE MEDIUM FINDING; returned to House/Sol |
+| CP-02 Brief Lock | PASS | Sol | Phase 2B DB-contract brief | ENTRY PASS |
+| CP-03 DB Contract + LAB Proof | TECHNICALLY_COMPLETE | Sol | Phase 2B evidence | independent QA required |
+| CP-04 House/Sol Review | REMEDIATE_SOURCE | House/Sol | House disposition `1f000a6` + brief `5a4f9c1` | Medium active-lease race must be fixed |
+| CP-05 Independent QA / Verify | COMPLETE | Claude | report `1fbbffb` | PASS WITH ONE MEDIUM FINDING |
+| CP-06 Outbox Active-Lease Remediation | DISPATCH_REQUIRED | Claude | fresh remediation dispatch pending | stop READY FOR HOUSE/SOL REVIEW R2 |
 
-## Evidence
+## Bounded Defect Contract
 
-- Material evidence: `docs/platform/billing-core/EVIDENCE-SB01-PHASE-2B-DB-CONTRACT-2026-09-11.md`
-- Migration: `docs/platform/billing-core/migrations/0002_multi_product_billing_runtime.sql`
-- Rollback: `docs/platform/billing-core/migrations/0002_multi_product_billing_runtime.rollback.sql`
-- DB contract test: `platform/runtime/tests/phase2b-db-contract.sql`
-- Codex executor reroute evidence: `docs/platform/billing-core/EVIDENCE-SB01-PHASE-2B-INDEPENDENT-QA-EXECUTOR-REROUTE-2026-09-11.md`
-- Claude verifier report: `docs/platform/billing-core/REPORT-CLAUDE-SB01-PHASE-2B-INDEPENDENT-QA-2026-09-12.md` (`1fbbffb1aed3f9c51d947f461e2d539f5eb6417a`)
+- Affected runtime paths: `claimWebhookEvent` and `enqueueReconciliation` in `platform/runtime/src/db.ts`.
+- Duplicate event/enqueue activity must not clear or invalidate an unexpired `processing` lease.
+- `dead_letter` must remain fail-closed.
+- Existing idempotency, isolation, completion/failure, and legitimate lease-expiry/recovery behavior must not regress.
+- Add targeted regression coverage reproducing the active-lease duplicate case and proving lease preservation.
 
-## Decisions
+## Prohibited
 
-- Keep `0001` historical baseline unchanged.
-- `0002` is forward-only runtime extension.
-- Codex Windows sandbox failure is executor/runtime infrastructure only, not an SB01 defect and not a QA verdict.
-- Do not bypass Codex sandbox; independent QA is rerouted to Claude with a new dispatch.
-- Independent QA remained read-only and cannot self-authorize Phase 2C.
-- Claude verdict: `PASS WITH ONE MEDIUM FINDING`; the Medium finding is duplicate-event resurrection clearing an active outbox lease in `claimWebhookEvent` / `enqueueReconciliation`.
-- LAB apply/catalog evidence was not re-run by Claude, per dispatch boundary; it remains evidence-reviewed rather than independently reproduced in this QA round.
+- No Phase 2C implementation.
+- No LAB/production mutation.
+- No Stripe/provider calls.
+- No Product Billing Profile activation.
+- No Control Plane billing work.
+- No migration/schema redesign unless a blocker is proven and returned to House/Sol.
+- No merge/release/deploy.
 
-## Blockers
+## Required Return
 
-Phase 2C remains authority-blocked until House/Sol reviews and dispositions the Claude Medium outbox-lease finding.
+Exact remediation SHA; changed files; targeted regression result; runtime build; runtime typecheck; profile-registry 16/16; `git diff --check`; final git status; evidence path; blockers/deviations; actual stop `READY FOR HOUSE/SOL REVIEW R2`.
 
 ## Next Action
 
-House/Sol review only. Decide remediation vs explicit risk acceptance for the Medium outbox-lease finding. No Phase 2C, deploy, provider mutation, profile activation, LAB mutation, or Product write.
+Create a fresh Claude Remediation Agent Dispatch Packet under canonical dispatch policy. Do not reuse the Independent-QA dispatch. Phase 2C remains HOLD.
