@@ -1,6 +1,6 @@
-﻿# TASK-SB01-PHASE-2B
+# TASK-SB01-PHASE-2B
 
-Status: REMEDIATION_DISPATCH_REQUIRED
+Status: REMEDIATION_DISPATCH_CREATED_PENDING_PIN
 Workflow ID: WF-DEV-01
 Workflow Spec Version: 1.1.0
 Runtime Procedure: N/A
@@ -15,10 +15,10 @@ Owner: Free
 Commander: Sol
 Current Worker: Claude / Remediation Agent
 Current Checkpoint: CP-06 OUTBOX ACTIVE-LEASE REMEDIATION / DISPATCH REQUIRED
-Latest Dispatch: PENDING — fresh Claude remediation dispatch required; Independent-QA dispatch is closed and must not be reused
+Latest Dispatch: docs/dispatch/AGENT-DISPATCH-SB01-PHASE-2B-OUTBOX-LEASE-REMEDIATION-CLAUDE-2026-09-12.md
 Dispatch Revision: PENDING
 Expected Stop: READY FOR HOUSE/SOL REVIEW R2
-Next Allowed Action: Create and pin a fresh Claude remediation dispatch; no material remediation before the dispatch gate passes.
+Next Allowed Action: Pin the fresh Claude remediation dispatch revision in this Task checkpoint; no material remediation before that gate passes.
 
 ## Objective
 
@@ -42,7 +42,7 @@ Close only the House/Sol-rejected Medium outbox active-lease race from Phase 2B,
 | CP-03 DB Contract + LAB Proof | TECHNICALLY_COMPLETE | Sol | Phase 2B evidence | independent QA required |
 | CP-04 House/Sol Review | REMEDIATE_SOURCE | House/Sol | House disposition `1f000a6` + brief `5a4f9c1` | Medium active-lease race must be fixed |
 | CP-05 Independent QA / Verify | COMPLETE | Claude | report `1fbbffb` | PASS WITH ONE MEDIUM FINDING |
-| CP-06 Outbox Active-Lease Remediation | DISPATCH_REQUIRED | Claude | fresh remediation dispatch pending | stop READY FOR HOUSE/SOL REVIEW R2 |
+| CP-06 Outbox Active-Lease Remediation | DISPATCH_CREATED_PENDING_PIN | Claude | fresh remediation dispatch created; revision pin pending | stop READY FOR HOUSE/SOL REVIEW R2 |
 
 ## Bounded Defect Contract
 
