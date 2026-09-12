@@ -1,6 +1,6 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `HARD STOP — LR-2C CODEX QA ROOT-CAUSE NEEDS SOL/OWNER DECISION — RECOVERY = B (BLOCKED)`
+Status: `LR-2C IN PROGRESS — QWEN REPAIR (FIX_BY_QWEN route) — AWAITING CHECKPOINT`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.2.0`
 Runtime Procedure: `kanban-external-agent-dispatch v2.3.8`
@@ -14,51 +14,37 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `Codex (LR-2C head verifier — rerun blocked by deterministic false positive)`
-Current Checkpoint: `HARD STOP — ROOT CAUSE DETERMINED (test-fixture FP); rerun on exact revision 7a407cd would trip again`
-Expected Stop: `SOL/OWNER DECISION: HOW TO CLEAR ROOT CAUSE (A | B | C | other)`
-Next Allowed Action: Sol/Owner selects how to clear the Codex secret-scan false positive before Hermes reruns INDEPENDENT-QA. No rerun, no scan bypass, no skill patch, no revision change without that decision.
+Current Worker: `Qwen (repair worker — FIX_BY_QWEN route)`
+Current Checkpoint: `LR-2C FIX_BY_QWEN — Codex INDEPENDENT-QA fresh rerun canonical (report 15:55)`
+Expected Stop: `READY FOR CODEX LR-2C INFORMED-VERIFY`
+Next Allowed Action: Hermes releases fresh Qwen LR-2C repair dispatch; after Qwen returns + deterministic gate PASS, Hermes dispatches Codex `INFORMED-VERIFY`.
 
-## LR-2C Recovery Directive (Owner, 2026-09-12) — decision = B with precondition
+## LR-2C Routing Decision (2026-09-12)
 
-Owner mandated:
-- Persist recovery: Codex LR-2C QA = **INVALID / NON-CANONICAL** due to `DIRECT_EXECUTOR_SECRET_DETECTED`.
-- Do **NOT** forward the old QA report to Codex on a fresh round (preserve INDEPENDENT-QA).
-- Investigate and clear the root cause of `secret_detected` in wrapper/stderr BEFORE rerun.
-- Rerun Codex on the **exact original revision** with a fresh INDEPENDENT-QA.
-- Only the new report + full provenance is canonical.
-- If `secret_detected` recurs on rerun -> **HARD STOP to Sol/Owner**.
+- **Root cause of prior Codex QA fail-closed:** driver secret-scan false-positive on committed synthetic
+  test-fixture constants (`secret: TEST_ASSERTION_SECRET`, `secret: LK01_ASSERTION_SECRET`,
+  `secret: 'entitlement-signing-secret-ps01'`, mock `sk_test_...` key). Owner approved remediation A;
+  scanner updated (`direct_external_executors._is_synthetic_secret_value`) with regression test
+  `scripts/test_secret_scanner.py` (6 synthetic FP-benign + 8 real fail-closed PASS). No fixture renamed,
+  no broad stderr whitelist. Root-cause record: `docs/relay/ROOT-CAUSE-...md`.
+- **Codex INDEPENDENT-QA fresh rerun** completed with full provenance:
+  - invocation `agent-codex.invocation.json`: `execution_backend=direct_external_process`,
+    `transport_model=none`, exit 0, wrapper sha256, stdout sha256 `16fef190...`, stderr `e3b0c442...`.
+  - Fresh canonical report `CODE-2-QA-REPORT-SB01-LR-2C-2026-09-12.md` (11767 B, 15:55): verdict **`FIX_BY_QWEN`**.
+  - Findings: F1(High) real WSTERA LAB/Stripe-Test vertical-slice evidence missing; F2(High) denied portal
+    return-ref creates durable operation/audit side effect; F3(Low) AGY evidence EOF blank line.
+- **Routing:** FIX_BY_QWEN -> one bounded Qwen repair dispatch -> deterministic gate -> Codex INFORMED-VERIFY.
+- Old (pre-root-cause) QA report was NON-CANONICAL and is superseded by the fresh canonical report above;
+  the old verdict was not used to advance the workflow.
 
-## Root Cause (determined + reproduced, 2026-09-12)
+## LR-2C History (persisted)
 
-`DIRECT_EXECUTOR_SECRET_DETECTED:wrapper_log:codex-worker-<stamp>.stderr.log` is a **false positive**
-from the driver's secret regex matching **committed synthetic test-fixture constants** in material
-revision `7a407cd` that Codex echoes into stderr while reading target source during QA:
-- Pattern 0: `secret: TEST_ASSERTION_SECRET`, `secret: LK01_ASSERTION_SECRET`,
-  `secret: 'entitlement-signing-secret-ps01'`, `const secret = input.secret ?? TEST_ASSERTION_SECRET;`
-- Pattern 1: `const TEST_SECRET_KEY = '<mock sk_test_...>'`
-
-Values are synthetic (`super-secret-ps01-account-assertion-key-2026`, `entitlement-signing-secret-ps01`,
-mock `sk_test_...`), not live credentials (Codex report: zero live Stripe calls, zero production mutation).
-Reproduced deterministically twice (diagnostic stderr `codex_qa_probe_logs/150152`, `150659`).
-Because rerun must be on the exact revision `7a407cd` and the fixtures are committed within it,
-a plain same-driver rerun WILL trip `secret_detected` again => Owner's own rule triggers HARD STOP.
-
-Clearing the root cause is outside Hermes-clerk scope. Sol/Owner must choose one:
-- **A** = Skill Governance: patch `direct_external_executors.py` secret-scan to not treat synthetic
-  `sk_test_`/test-fixture constants as secrets (Owner approval required before skill patch), then rerun exact revision.
-- **B** = Worker-scoped: Qwen/AGY neutralize the committed fixture constant names/values so they no
-  longer match the regex, then Owner approves the revised SHA before rerun (NOTE: changes material revision).
-- **C** = Driver operational exception: Owner records this wrapper-log as known-benign whitelist,
-  then rerun INDEPENDENT-QA to completion with full provenance on the same revision.
-
-Root-cause record: `docs/relay/ROOT-CAUSE-SB01-LR-2C-CODEX-SECRET-DETECTED-2026-09-12.md` (commit `a2cb1d4`).
-
-## Status / Blockers
-
-- **HARD STOP.** No rerun, no silent retry, no scan bypass, no skill patch, no revision change,
-  no canonicalization of the old (provenance-less) QA report without Sol/Owner decision.
-- Branch parity at `a2cb1d4` `0/0` ahead/behind `origin/feature/central-billing-phase2-runtime`? (verify)
+- PRE-01 preflight PASS (`adb2d64`); AGY implement `f22b01a` (evidence-fix `9001795`); Qwen expansion `7a407cd`;
+  combined material `7a407cd`, branch head `e102e3f`.
+- Deterministic gate PASS at `e102e3f` (build/typecheck/runtime 42-42/registry 16-16/diff-check clean).
+- First Codex QA fail-closed (secret_detected) -> NON-CANONICAL; chain-failure recorded `ec7aa2f`.
+- Root-cause + Owner A remediation -> fresh Codex rerun canonical (this checkpoint).
+- Branch parity at checkpoint `2f183b5` `0/0` vs `origin/work/sb01-central-billing-pc-20260911`.
 Initial Materialized Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-AGY-2026-09-12.md`
 Initial Dispatch Revision: `1b5ca31711aa362481aefec840576af188389f61`
 
