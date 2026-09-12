@@ -6,25 +6,32 @@ type JsonRecord = Record<string, postgres.JSONValue>;
 // Shared by claimWebhookEvent and enqueueReconciliation: on a duplicate dedupe_key, keep an
 // unexpired `processing` lease intact (don't hand the same job to a second worker) and keep
 // `dead_letter` fail-closed. Decision table mirrored by resolveOutboxConflict for testing.
+//
+// Both affected INSERTs alias the conflict target as `existing_job` (`insert into ... as
+// existing_job`). Existing-row RHS reads must go through that alias: inside `on conflict do
+// update`, an unqualified column name is ambiguous between the existing target row and the
+// proposed `excluded` row and PostgreSQL rejects it (or worse, resolves it unexpectedly). SET
+// target columns on the LHS must stay unqualified — PostgreSQL does not accept a qualified
+// assignment target there.
 export const OUTBOX_LEASE_PRESERVING_CONFLICT_SET = `
   status=case
-    when status='dead_letter' then 'dead_letter'
-    when status='processing' and lease_expires_at > now() then 'processing'
+    when existing_job.status='dead_letter' then 'dead_letter'
+    when existing_job.status='processing' and existing_job.lease_expires_at > now() then 'processing'
     else 'pending'
   end,
   next_attempt_at=case
-    when status='dead_letter' then next_attempt_at
-    when status='processing' and lease_expires_at > now() then next_attempt_at
+    when existing_job.status='dead_letter' then existing_job.next_attempt_at
+    when existing_job.status='processing' and existing_job.lease_expires_at > now() then existing_job.next_attempt_at
     else now()
   end,
   lease_owner=case
-    when status='dead_letter' then lease_owner
-    when status='processing' and lease_expires_at > now() then lease_owner
+    when existing_job.status='dead_letter' then existing_job.lease_owner
+    when existing_job.status='processing' and existing_job.lease_expires_at > now() then existing_job.lease_owner
     else null
   end,
   lease_expires_at=case
-    when status='dead_letter' then lease_expires_at
-    when status='processing' and lease_expires_at > now() then lease_expires_at
+    when existing_job.status='dead_letter' then existing_job.lease_expires_at
+    when existing_job.status='processing' and existing_job.lease_expires_at > now() then existing_job.lease_expires_at
     else null
   end,
   updated_at=now()
@@ -345,7 +352,7 @@ export class BillingDb {
       if (!skipped) {
         const dedupeKey = `stripe:${input.providerEventId}:reconcile`;
         await tx.unsafe(
-          `insert into ${outboxTable}
+          `insert into ${outboxTable} as existing_job
             (provider_event_id, environment, product_id, account_id, profile_version, job_type,
              payload, status, dedupe_key, correlation_id)
            values ($1::uuid,$2,$3,$4,$5,'reconcile',$6::jsonb,'pending',$7,$8::uuid)
@@ -445,7 +452,7 @@ export class BillingDb {
     const table = this.table('runtime_outbox_jobs');
     const dedupeKey = `reconcile:${input.environment}:${input.productId}:${input.accountId}:${input.providerSubscriptionId}:${input.reason}`;
     await this.sql`
-      insert into ${table}
+      insert into ${table} as existing_job
         (environment, product_id, account_id, profile_version, job_type, payload, status, dedupe_key, correlation_id)
       values (${input.environment}, ${input.productId}, ${input.accountId}, ${input.profileVersion},
               'reconcile', ${this.sql.json({ providerObjectId: input.providerSubscriptionId, reason: input.reason })},
