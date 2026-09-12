@@ -1,6 +1,6 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `LR-2C IN PROGRESS — QWEN REPAIR (FIX_BY_QWEN route) — AWAITING CHECKPOINT`
+Status: `LR-2C HARD STOP — FIX-01 REQUIRES SOL/OWNER DECISION (FIX-02/FIX-03 REPAIRED + GATE GREEN)`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.2.0`
 Runtime Procedure: `kanban-external-agent-dispatch v2.3.8`
@@ -14,37 +14,28 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `Qwen (repair worker — FIX_BY_QWEN route)`
-Current Checkpoint: `LR-2C FIX_BY_QWEN — Codex INDEPENDENT-QA fresh rerun canonical (report 15:55)`
-Expected Stop: `READY FOR CODEX LR-2C INFORMED-VERIFY`
-Next Allowed Action: Hermes releases fresh Qwen LR-2C repair dispatch; after Qwen returns + deterministic gate PASS, Hermes dispatches Codex `INFORMED-VERIFY`.
+Current Worker: `Qwen (repair — FIX-02/FIX-03 done; FIX-01 blocked)`
+Current Checkpoint: `LR-2C QWEN REPAIR RETURNED SOL_OWNER_DECISION_REQUIRED (FIX-01 Test creds absent)`
+Expected Stop: `SOL/OWNER DECISION: provision Test creds to close FIX-01 OR re-scope LR-2C`
+Next Allowed Action: Sol/Owner decides how to close FIX-01 (provision BILLING_DATABASE_URL + Stripe Test STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET, or explicit re-scope). No advance to Codex INFORMED-VERIFY / LR-2D until then.
 
-## LR-2C Routing Decision (2026-09-12)
+## LR-2C QWEN REPAIR State (persisted 2026-09-12)
 
-- **Root cause of prior Codex QA fail-closed:** driver secret-scan false-positive on committed synthetic
-  test-fixture constants (`secret: TEST_ASSERTION_SECRET`, `secret: LK01_ASSERTION_SECRET`,
-  `secret: 'entitlement-signing-secret-ps01'`, mock `sk_test_...` key). Owner approved remediation A;
-  scanner updated (`direct_external_executors._is_synthetic_secret_value`) with regression test
-  `scripts/test_secret_scanner.py` (6 synthetic FP-benign + 8 real fail-closed PASS). No fixture renamed,
-  no broad stderr whitelist. Root-cause record: `docs/relay/ROOT-CAUSE-...md`.
-- **Codex INDEPENDENT-QA fresh rerun** completed with full provenance:
-  - invocation `agent-codex.invocation.json`: `execution_backend=direct_external_process`,
-    `transport_model=none`, exit 0, wrapper sha256, stdout sha256 `16fef190...`, stderr `e3b0c442...`.
-  - Fresh canonical report `CODE-2-QA-REPORT-SB01-LR-2C-2026-09-12.md` (11767 B, 15:55): verdict **`FIX_BY_QWEN`**.
-  - Findings: F1(High) real WSTERA LAB/Stripe-Test vertical-slice evidence missing; F2(High) denied portal
-    return-ref creates durable operation/audit side effect; F3(Low) AGY evidence EOF blank line.
-- **Routing:** FIX_BY_QWEN -> one bounded Qwen repair dispatch -> deterministic gate -> Codex INFORMED-VERIFY.
-- Old (pre-root-cause) QA report was NON-CANONICAL and is superseded by the fresh canonical report above;
-  the old verdict was not used to advance the workflow.
+- Fresh canonical Codex INDEPENDENT-QA (full provenance) verdict `FIX_BY_QWEN` findings F1(High)/F2(High)/F3(Low).
+- Qwen repair dispatch released; Qwen returned at branch HEAD `6309a08`.
+- **FIX-02 REPAIRED:** `runtime.ts` now validates portal return-ref allowlist BEFORE `beginOperation` (3 lines, before any durable write); denied-portal test (`negative-authority-matrix.test.mjs`) asserts 0 new `/v1/portal` op rows + 0 portal audits for arbitrary return ref; idempotency for valid portal preserved.
+- **FIX-03 REPAIRED:** trailing blank line at EOF removed from `EVIDENCE-SB01-LR-2C-AGY...`; `git diff --check 6be6cb..6309a08` PASS.
+- **FIX-01 BLOCKED → SOL_OWNER_DECISION_REQUIRED:** Worker probed environment; `BILLING_DATABASE_URL` (WSTERA LAB billing_core_staging), `STRIPE_SECRET_KEY` (Test), `STRIPE_WEBHOOK_SECRET` (Test) all ABSENT; no `.env` at repo root or `platform/runtime/`; only `.env.example` template. `server.mjs` requires all three. Hermes verified absence independently (env vars ABSENT, no .env on disk). Per dispatch critical constraint: no fabrication, no mock-only downgrade.
+- **Gate (Hermes, at returned revision `6309a08`):** build PASS (0), typecheck PASS (0), runtime tests 42/42 PASS, profile-registry 16/16 PASS, `git diff --check 6be6cb..6309a08` clean. Fixture constants unchanged; no prohibited-path change.
+- Repair material SHA (FIX-02/FIX-03): `e61a8f7`; evidence-record commit: `6309a08`.
+- Branch parity `0/0` vs `origin/work/sb01-central-billing-pc-20260911`.
 
-## LR-2C History (persisted)
+## Decision Required
 
-- PRE-01 preflight PASS (`adb2d64`); AGY implement `f22b01a` (evidence-fix `9001795`); Qwen expansion `7a407cd`;
-  combined material `7a407cd`, branch head `e102e3f`.
-- Deterministic gate PASS at `e102e3f` (build/typecheck/runtime 42-42/registry 16-16/diff-check clean).
-- First Codex QA fail-closed (secret_detected) -> NON-CANONICAL; chain-failure recorded `ec7aa2f`.
-- Root-cause + Owner A remediation -> fresh Codex rerun canonical (this checkpoint).
-- Branch parity at checkpoint `2f183b5` `0/0` vs `origin/work/sb01-central-billing-pc-20260911`.
+Sol/Owner must choose:
+- **A**: Provision the three Test-only credentials (WSTERA LAB `billing_core_staging` `BILLING_DATABASE_URL`, Stripe Test `STRIPE_SECRET_KEY`, Stripe Test `STRIPE_WEBHOOK_SECRET`) so Qwen can run the real Test vertical-slice; then Codex INFORMED-VERIFY.
+- **B**: Explicitly re-scope LR-2C FIX-01 (owner-approved exception to mock-only for the real provider/LAB slice) — requires a Sol/Owner decision recorded, not a Hermes call.
+- **C**: Other.
 Initial Materialized Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-AGY-2026-09-12.md`
 Initial Dispatch Revision: `1b5ca31711aa362481aefec840576af188389f61`
 
