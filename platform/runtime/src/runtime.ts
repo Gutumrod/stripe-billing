@@ -79,8 +79,8 @@ export class CentralBillingRuntime {
     if (config.schema !== 'billing_core_staging') {
       throw new BillingRuntimeError('PHASE2_SCHEMA_DENIED', 'Phase 2 runtime must use billing_core_staging', 500);
     }
-    this.db = new BillingDb(config.databaseUrl, config.schema);
-    this.stripe = new StripeTestAdapter({ secretKey: config.stripeSecretKey, fetch: config.fetch });
+    this.db = config.db ?? new BillingDb(config.databaseUrl, config.schema);
+    this.stripe = config.stripe ?? new StripeTestAdapter({ secretKey: config.stripeSecretKey, fetch: config.fetch });
   }
   async initialize(): Promise<void> {
     await this.db.ping();
@@ -110,6 +110,12 @@ export class CentralBillingRuntime {
     accountId: string,
     operationId: string,
   ): Promise<RequestAuthority> {
+    for (const [headerName] of request.headers) {
+      const lower = headerName.toLowerCase();
+      if (lower.startsWith('x-wstera-') && lower !== 'x-wstera-account-assertion') {
+        throw new BillingRuntimeError('CALLER_AUTHORITY_OVERRIDE', `Authoritative or unsupported header: ${headerName}`, 400);
+      }
+    }
     const credential = await authenticateBearer(request.headers.get('authorization'), this.config.credentials, scope);
     if (credential.environment !== this.config.environment) {
       throw new BillingRuntimeError('CREDENTIAL_ENV_MISMATCH', 'Credential environment denied', 403);
@@ -144,12 +150,24 @@ export class CentralBillingRuntime {
   async handle(request: Request): Promise<Response> {
     const url = new URL(request.url);
     try {
-      if (request.method === 'POST' && url.pathname === '/v1/checkout') return await this.handleCheckout(request);
+      if (request.method === 'POST' && url.pathname === '/v1/checkout') {
+        this.validateQuery(url, []);
+        return await this.handleCheckout(request);
+      }
       if (request.method === 'GET' && url.pathname === '/v1/subscription/status') return await this.handleSubscriptionStatus(request, url);
       if (request.method === 'GET' && url.pathname === '/v1/entitlements') return await this.handleEntitlements(request, url);
-      if (request.method === 'POST' && url.pathname === '/v1/portal') return await this.handlePortal(request);
-      if (request.method === 'POST' && url.pathname === '/webhooks/stripe') return await this.handleWebhook(request);
-      if (request.method === 'GET' && url.pathname === '/healthz') return jsonResponse({ ok: true, environment: this.config.environment });
+      if (request.method === 'POST' && url.pathname === '/v1/portal') {
+        this.validateQuery(url, []);
+        return await this.handlePortal(request);
+      }
+      if (request.method === 'POST' && url.pathname === '/webhooks/stripe') {
+        this.validateQuery(url, []);
+        return await this.handleWebhook(request);
+      }
+      if (request.method === 'GET' && url.pathname === '/healthz') {
+        this.validateQuery(url, []);
+        return jsonResponse({ ok: true, environment: this.config.environment });
+      }
       return jsonResponse({ error: 'NOT_FOUND' }, 404);
     } catch (error) {
       const runtimeError = error instanceof BillingRuntimeError

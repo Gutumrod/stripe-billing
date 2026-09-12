@@ -64,6 +64,9 @@ export interface ProfileRegistryLike {
   }): Readonly<RuntimeProfile>;
 }
 
+import type { BillingDb } from './db';
+import type { StripeTestAdapter } from './stripe';
+
 export interface RuntimeLogger {
   info(event: string, fields: Record<string, unknown>): void;
   warn(event: string, fields: Record<string, unknown>): void;
@@ -84,6 +87,8 @@ export interface RuntimeConfig {
   profileRegistry: ProfileRegistryLike;
   logger: RuntimeLogger;
   fetch?: typeof globalThis.fetch;
+  db?: BillingDb;
+  stripe?: StripeTestAdapter;
 }
 
 export interface RequestAuthority {

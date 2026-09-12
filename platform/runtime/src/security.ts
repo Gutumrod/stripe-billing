@@ -89,6 +89,15 @@ export interface AccountAssertionPayload {
   exp: number;
 }
 
+export async function signAccountAssertion(
+  payload: AccountAssertionPayload,
+  secret: string,
+): Promise<string> {
+  const payloadPart = toBase64Url(encoder.encode(JSON.stringify(payload)));
+  const signature = await hmac(secret, payloadPart);
+  return `${payloadPart}.${signature}`;
+}
+
 export async function verifyAccountAssertion(
   token: string | null,
   binding: CredentialBinding,
@@ -99,10 +108,11 @@ export async function verifyAccountAssertion(
   nowSeconds = Math.floor(Date.now() / 1000),
 ): Promise<AccountAssertionPayload> {
   if (!token) throw new BillingRuntimeError('ACCOUNT_ASSERTION_REQUIRED', 'Account assertion is required', 401);
-  const [payloadPart, signaturePart] = token.split('.');
-  if (!payloadPart || !signaturePart) {
+  const parts = token.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
     throw new BillingRuntimeError('ACCOUNT_ASSERTION_INVALID', 'Malformed account assertion', 401);
   }
+  const [payloadPart, signaturePart] = parts;
   let payload: AccountAssertionPayload;
   try {
     payload = JSON.parse(decoder.decode(fromBase64Url(payloadPart))) as AccountAssertionPayload;
