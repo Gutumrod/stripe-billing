@@ -1,6 +1,6 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `LR-2C FIX-01 — REAL TEST CREDS READY — AWAITING QWEN DISPATCH`
+Status: `BLOCKED — LR-2C FIX-01 QWEN REAL-SLICE FAILED x2 (exit 55) — RECOVERY DECISION REQUIRED`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.2.0`
 Runtime Procedure: `kanban-external-agent-dispatch v2.3.8`
@@ -14,26 +14,31 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `Qwen (FIX-01 real TEST vertical-slice — dispatch ready)`
-Current Checkpoint: `LR-2C FIX-01 — REAL TEST CREDS READY + VERIFIED`
-Expected Stop: `READY FOR QWEN FIX-01 REAL VERTICAL-SLICE DISPATCH`
-Next Allowed Action: Hermes releases fresh Qwen FIX-01 dispatch on exact current HEAD; after Qwen returns + deterministic gate PASS, dispatches fresh Codex verification.
+Current Worker: `(FIX-01 real-slice failed — no Qwen evidence)`
+Current Checkpoint: `FIX-01 QWEN REAL-SLICE FAILED x2 (exit 55) — no evidence/provenance produced`
+Expected Stop: `OWNER/SOL: recovery decision for FIX-01 (A retry | B diagnose exit-55 | C hard-stop)`
+Next Allowed Action: Owner selects recovery path. Hermes does NOT silently retry a material stage failure.
 
-## LR-2C FIX-01 CREDENTIAL READINESS (verified fail-closed, 2026-09-12)
+## LR-2C FIX-01 State After Qwen Exit-55 (verified, 2026-09-12)
 
-All required TEST-only credentials verified against live system + canonical vault `D:\AI-Workspace\.secrets\keys.txt`:
+- Credentials READY + verified (Hermes): BILLING_DATABASE_URL connect PASS; sk_test_ present;
+  whsec_ present; stripe listener PID 16168 alive forwarding to 8787.
+- **Run 1** via dee.execute -> DIRECT_EXECUTOR_EXIT:agent-qwen:55 (worker exited before work); no evidence, no commit.
+- **Run 2** wrapper-direct diagnostic -> qwen worker confirmed creds present, began real-slice, ended without
+  full output (probe.out.txt = 0 bytes) or commit. A real Stripe TEST/LAB mutation may have been partially
+  started before the worker ended; Hermes did NOT execute further mutations (fail-closed).
+- No FIX-01 evidence/commit; HEAD `79df229`; `run-sb01-lr2c-real-slice.mjs` untracked (has known /v1/v1/events
+  double-prefix bug Qwen identified but did not finish committing).
+- Chain-failure record: `docs/relay/CHAIN-FAILURE-SB01-LR-2C-FIX01-QWEN-EXIT-55-2026-09-12.md` (commit `79df229`).
+- FIX-02/FIX-03 already repaired + gate green (`6309a08`). FIX-01 remains open.
+- Root cause of exit 55 undetermined (both runs fail on qwen process, not creds).
 
-1. **`BILLING_DATABASE_URL`** — CONNECT PASS. Read-only probe via WSTERA LAB `aws-1-ap-southeast-1.pooler.supabase.com`: `CONNECT_OK row0={"ok":1}`; `billing_core_staging` and `billing_core` each 16 tables (0001+0002 migrations applied). DSN read from vault (owner-provisioned), not inferred; temp DSN removed after probe.
-2. **Stripe TEST key** — PRESENT & correct: `sk_test_...` matching pinned `acct_1U2L8zHB4GRCffd9` (matrix evidence). Test only, livemode=false expected.
-3. **`STRIPE_WEBHOOK_SECRET`** — PRESENT, real (70 chars, `whsec_0c9...`), NOT placeholder. Owner provisioned 2026-09-12 (registry row `STRIPE__WSTERA_PRODUCTION__SB01_CENTRAL_BILLING__TEST__WEBHOOK_SECRET`).
-4. **Stripe listener PID 16168** — ALIVE, command line confirms `stripe.exe listen --forward-to http://127.0.0.1:8787/webhooks/stripe --events checkout.session.completed,...`. Forward target is the Core HTTP webhook route.
-5. No Live Stripe, no production mutation, no mock-only downgrade.
+## Recovery options (Owner / Sol)
 
-## LR-2C State (persisted)
-
-- PRE-01 preflight PASS (`adb2d64`); AGY implement `f22b01a`; Qwen expansion `7a407cd`; canonical Codex INDEPENDENT-QA `FIX_BY_QWEN` (report 15:55); Qwen repair FIX-02/FIX-03 done + gate green (`6309a08`).
-- FIX-01 remains open, now unblocked by provisioned real TEST creds.
-- Branch parity `0/0` vs `origin/work/sb01-central-billing-pc-20260911` at HEAD `dc9d5cf`. No new task created; this resumes Task SB01-LONG-RUN-2C-2F-001.
+- **A**: fresh Qwen FIX-01 via canonical driver, reuse/fix `run-sb01-lr2c-real-slice.mjs` (/v1/v1/events bug),
+  run real slice, commit evidence; optionally clean partial Stripe/LAB rows first if Owner authorizes.
+- **B**: diagnose qwen exit-55 root cause (bounded trivial trusted-repo invocation, capture stderr) before retry.
+- **C**: treat repeated exit-55 as SOL_OWNER_DECISION_REQUIRED and stop FIX-01 pending deeper executor investigation.
 Initial Materialized Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-AGY-2026-09-12.md`
 Initial Dispatch Revision: `1b5ca31711aa362481aefec840576af188389f61`
 
