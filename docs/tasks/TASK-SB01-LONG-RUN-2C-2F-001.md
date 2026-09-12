@@ -1,6 +1,6 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `LR-2C HARD STOP — FIX-01 REQUIRES SOL/OWNER DECISION (FIX-02/FIX-03 REPAIRED + GATE GREEN)`
+Status: `LR-2C FAIL-CLOSED — AWAITING REAL TEST CREDS (STRIPE_WEBHOOK_SECRET + BILLING_DATABASE_URL) — HOLD`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.2.0`
 Runtime Procedure: `kanban-external-agent-dispatch v2.3.8`
@@ -14,28 +14,40 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `Qwen (repair — FIX-02/FIX-03 done; FIX-01 blocked)`
-Current Checkpoint: `LR-2C QWEN REPAIR RETURNED SOL_OWNER_DECISION_REQUIRED (FIX-01 Test creds absent)`
-Expected Stop: `SOL/OWNER DECISION: provision Test creds to close FIX-01 OR re-scope LR-2C`
-Next Allowed Action: Sol/Owner decides how to close FIX-01 (provision BILLING_DATABASE_URL + Stripe Test STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET, or explicit re-scope). No advance to Codex INFORMED-VERIFY / LR-2D until then.
+Current Worker: `Hermes (clerk) — fail-closed awaiting provisioned real TEST creds`
+Current Checkpoint: `HOLD — FIX-01 requires real STRIPE_WEBHOOK_SECRET + canonical WSTERA LAB BILLING_DATABASE_URL`
+Expected Stop: `OWNER/SOL: provision + verify the two TEST creds, then continue Qwen FIX-01`
+Next Allowed Action: No Qwen dispatch, no re-scope, no mock-only downgrade until both real TEST creds are provisioned and Hermes has verified them (connectivity + signature) fail-closed.
 
-## LR-2C QWEN REPAIR State (persisted 2026-09-12)
+## LR-2C Owner Decision (2026-09-12, reaffirmed)
 
-- Fresh canonical Codex INDEPENDENT-QA (full provenance) verdict `FIX_BY_QWEN` findings F1(High)/F2(High)/F3(Low).
-- Qwen repair dispatch released; Qwen returned at branch HEAD `6309a08`.
-- **FIX-02 REPAIRED:** `runtime.ts` now validates portal return-ref allowlist BEFORE `beginOperation` (3 lines, before any durable write); denied-portal test (`negative-authority-matrix.test.mjs`) asserts 0 new `/v1/portal` op rows + 0 portal audits for arbitrary return ref; idempotency for valid portal preserved.
-- **FIX-03 REPAIRED:** trailing blank line at EOF removed from `EVIDENCE-SB01-LR-2C-AGY...`; `git diff --check 6be6cb..6309a08` PASS.
-- **FIX-01 BLOCKED → SOL_OWNER_DECISION_REQUIRED:** Worker probed environment; `BILLING_DATABASE_URL` (WSTERA LAB billing_core_staging), `STRIPE_SECRET_KEY` (Test), `STRIPE_WEBHOOK_SECRET` (Test) all ABSENT; no `.env` at repo root or `platform/runtime/`; only `.env.example` template. `server.mjs` requires all three. Hermes verified absence independently (env vars ABSENT, no .env on disk). Per dispatch critical constraint: no fabrication, no mock-only downgrade.
-- **Gate (Hermes, at returned revision `6309a08`):** build PASS (0), typecheck PASS (0), runtime tests 42/42 PASS, profile-registry 16/16 PASS, `git diff --check 6be6cb..6309a08` clean. Fixture constants unchanged; no prohibited-path change.
-- Repair material SHA (FIX-02/FIX-03): `e61a8f7`; evidence-record commit: `6309a08`.
-- Branch parity `0/0` vs `origin/work/sb01-central-billing-pc-20260911`.
+Owner decided **A — KEEP REAL TEST VERTICAL-SLICE**:
+- Do NOT re-scope FIX-01 to mock-only.
+- Keep LR-2C fail-closed until the real TEST-only `STRIPE_WEBHOOK_SECRET` and the canonical WSTERA LAB
+  `BILLING_DATABASE_URL` are provisioned AND verified.
+- Do NOT fabricate, infer, or persist secrets in Git/logs/evidence.
+- Once both credentials are valid: continue Qwen FIX-01 on the real vertical slice, run deterministic
+  gates, then fresh Codex verification on the exact returned revision.
 
-## Decision Required
+## Credential audit (Hermes, real, no fabrication)
 
-Sol/Owner must choose:
-- **A**: Provision the three Test-only credentials (WSTERA LAB `billing_core_staging` `BILLING_DATABASE_URL`, Stripe Test `STRIPE_SECRET_KEY`, Stripe Test `STRIPE_WEBHOOK_SECRET`) so Qwen can run the real Test vertical-slice; then Codex INFORMED-VERIFY.
-- **B**: Explicitly re-scope LR-2C FIX-01 (owner-approved exception to mock-only for the real provider/LAB slice) — requires a Sol/Owner decision recorded, not a Hermes call.
-- **C**: Other.
+Checked against canonical vault `D:\AI-Workspace\.secrets\keys.txt` and live probes:
+- `STRIPE_SECRET_KEY` (Test) — PRESENT & matches pinned `acct_1U2L8zHB4GRCffd9` (matrix evidence).
+- `STRIPE_WEBHOOK_SECRET` (Test) — **ABSENT / placeholder**: vault line = comment
+  `STRIPE_WEBHOOK_SECRET_BOOKING2= -- not issued yet. Generated when the webhook endpoint is...`.
+- `BILLING_DATABASE_URL` (WSTERA LAB) — **no canonical DSN in vault**; a DSN assembled from
+  `postgres.ykxlqnshaaxmzzocpjlj` did NOT connect (`ENOTFOUND tenant/user ... not found`).
+- Hermes did NOT commit/copy any secret; temp DSN removed after probe.
+
+Per Owner decision, Hermes remains fail-closed and will NOT dispatch Qwen FIX-01 until a real
+`STRIPE_WEBHOOK_SECRET` and a connectivity-verified canonical `BILLING_DATABASE_URL` are provided.
+
+## Blocked artifacts
+
+- FIX-02/FIX-03 already repaired + gate green (build/typecheck/runtime 42-42/registry 16-16/diff-check
+  clean at `6309a08`); repair material `e61a8f7`.
+- Fresh canonical Codex INDEPENDENT-QA (full provenance) verdict `FIX_BY_QWEN` (report 15:55).
+- FIX-01 remains open pending the two real TEST creds above.
 Initial Materialized Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-LR-2C-AGY-2026-09-12.md`
 Initial Dispatch Revision: `1b5ca31711aa362481aefec840576af188389f61`
 
