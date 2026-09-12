@@ -125,10 +125,26 @@ shared constant would require re-verifying this test's coverage still holds.
 - Changed files: `platform/runtime/src/db.ts`,
   `platform/runtime/tests/outbox-lease-conflict.test.mjs`,
   `docs/platform/billing-core/REPORT-CLAUDE-SB01-PHASE-2B-OUTBOX-LEASE-REMEDIATION-2026-09-12.md`.
-- Commit SHA, branch, and remote-parity confirmation are recorded after this
-  file is committed and pushed (see return contract in the dispatch).
+- Material remediation SHA: `2cfdfaea25278294d26f66ee88947e0407645402`.
+- Branch: `work/sb01-central-billing-pc-20260911`, pushed to `origin/feature/central-billing-phase2-runtime`.
+- Remote parity at material return: `0/0`.
 
 ## Actual stop checkpoint
 
 **READY FOR HOUSE/SOL REVIEW R2.** Phase 2C remains HOLD; this round does not
 authorize merge, deploy, release, or Phase 2C start.
+## Commander Post-Return Verification
+
+- Exact material remediation SHA: `2cfdfaea25278294d26f66ee88947e0407645402`.
+- Dispatch gate baseline: `9d6e9a0a345531ea7fae4be53c03f6877ed78066`.
+- Material changed-file boundary: exactly 3 files — `platform/runtime/src/db.ts`, `platform/runtime/tests/outbox-lease-conflict.test.mjs`, and this remediation report.
+- Commander re-ran `platform/runtime` build: **PASS**.
+- Commander re-ran `platform/runtime` typecheck: **PASS**.
+- Commander re-ran targeted outbox lease regression: **6/6 PASS**.
+- Commander re-ran full runtime test suite: **6/6 PASS**.
+- Commander re-ran Product Billing Profile Registry regression: **16/16 PASS**.
+- Commander re-ran `git diff --check` across the remediation range: **PASS**.
+- Material commit was pushed to `origin/feature/central-billing-phase2-runtime` and local/remote parity was `0/0` before the Commander checkpoint-only update.
+- No LAB/database/provider mutation, Phase 2C work, merge, release, or deploy occurred.
+
+The material remediation SHA above is the exact source revision House/Sol R2 must review. The later checkpoint commit only persists this verification and transitions the canonical Task back to House/Sol review.
