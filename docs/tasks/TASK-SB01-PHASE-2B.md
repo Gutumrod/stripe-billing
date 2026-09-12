@@ -1,6 +1,6 @@
 # TASK-SB01-PHASE-2B
 
-Status: CLAUDE_R2_REMEDIATION_READY
+Status: READY_FOR_HOUSE_SOL_REVIEW_R3
 Workflow ID: WF-DEV-01
 Workflow Spec Version: 1.1.0
 Runtime Procedure: N/A
@@ -13,14 +13,14 @@ First Remediation Commit Reviewed R2: 2cfdfaea25278294d26f66ee88947e0407645402
 R2 Verdict Checkpoint: d6e5a30d419706dc3a405015158d0ff6ceb7568c
 Owner: Free
 Commander: Sol
-Current Worker: Claude / Remediation Agent
-Current Checkpoint: CP-08 R2 SQL QUALIFICATION REMEDIATION / READY
+Current Worker: House/Sol Review
+Current Checkpoint: CP-08 R2 SQL QUALIFICATION REMEDIATION COMPLETE / RETURNED TO HOUSE-SOL REVIEW R3
 Latest House Review: House `docs/platform/billing-core/REVIEW-SB01-PHASE-2B-HOUSE-SOL-R2-2026-09-12.md` at `f9b05c9fbc2bf72d03d7a0d94c88259386c2a01c`
 Current House Brief: House `docs/platform/billing-core/BRIEF-SB01-PHASE-2B-R2-SQL-QUALIFICATION-REMEDIATION-2026-09-12.md` at `8ba86cea7930222ce3c7e1174933d9f569867063`
 Latest Dispatch: `docs/dispatch/AGENT-DISPATCH-SB01-PHASE-2B-R2-SQL-QUALIFICATION-CLAUDE-2026-09-12.md`
 Dispatch Revision: `5b650442c0beb40cdeec58dae1c11dbc210c2eb4`
-Expected Stop: READY FOR HOUSE/SOL REVIEW R3
-Next Allowed Action: Claude executes only the fresh CP-08 dispatch pinned above, commits/pushes the bounded remediation, and stops at `READY FOR HOUSE/SOL REVIEW R3`. Phase 2C remains HOLD.
+Expected Stop: HOUSE/SOL REVIEW R3 DECISION - PHASE 2C REMAINS HOLD
+Next Allowed Action: House/Sol R3 reviews exact material remediation SHA `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`; no Phase 2C execution before explicit acceptance.
 
 ## Objective
 
@@ -58,7 +58,7 @@ Do not infer scope from chat history.
 | CP-05 Independent QA | COMPLETE | Claude | one Medium finding |
 | CP-06 First Lease Remediation | COMPLETE / RETURNED | Claude | `2cfdfae` |
 | CP-07 House/Sol Review R2 | REMEDIATE_SOURCE | Sol | R2-F1 SQL ambiguity + R2-F2 test gap |
-| CP-08 R2 SQL Qualification Remediation | READY | Claude | dispatch `5b65044`; stop `READY FOR HOUSE/SOL REVIEW R3` |
+| CP-08 R2 SQL Qualification Remediation | COMPLETE / RETURNED | Claude -> House/Sol | remediation `6be6cb3` + evidence report; stop `READY FOR HOUSE/SOL REVIEW R3` |
 
 ## Locked Defect Set
 
@@ -88,10 +88,22 @@ Current six-case tests exercise only a manually mirrored pure helper and do not 
 - No Council rerun.
 - No reuse of prior remediation dispatch.
 
-## Required Return
+## Remediation Return
 
-Exact remediation SHA; branch/worktree; changed files; targeted regression results; runtime build/typecheck/test results; Profile Registry 16/16; `git diff --check`; evidence path; blockers/limitations; deviations; clean tracked status; push + remote parity; actual stop `READY FOR HOUSE/SOL REVIEW R3`.
+- Exact remediation SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`.
+- Changed files: `platform/runtime/src/db.ts`, `platform/runtime/tests/outbox-conflict-sql-qualification.test.mjs`, `docs/platform/billing-core/REPORT-CLAUDE-SB01-PHASE-2B-R2-SQL-QUALIFICATION-REMEDIATION-2026-09-12.md`.
+- Targeted SQL/call-site regression: 4/4 PASS.
+- Lease semantic regression: 6/6 PASS.
+- Runtime build: PASS.
+- Runtime typecheck: PASS.
+- Runtime full test: 10/10 PASS.
+- Profile Registry: 16/16 PASS.
+- `git diff --check`: PASS.
+- Evidence path: `docs/platform/billing-core/REPORT-CLAUDE-SB01-PHASE-2B-R2-SQL-QUALIFICATION-REMEDIATION-2026-09-12.md`.
+- Procedural deviation: Claude authored source/test remediation but hit subscription session limit during verification/commit continuation; Commander executed required verification and persistence mechanics without altering remediation source logic.
+- Material push parity: 0/0.
+- Actual stop: `READY FOR HOUSE/SOL REVIEW R3`.
 
 ## Next Action
 
-Claude executes only the pinned fresh dispatch and returns to House/Sol R3.
+House/Sol R3 review only against exact material remediation SHA `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`. Phase 2C remains HOLD; no merge/deploy/provider/database/Control Plane Billing action is authorized.

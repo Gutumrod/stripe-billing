@@ -81,3 +81,11 @@ No PostgreSQL statement was executed. This is intentional and required: the disp
 
 Actual stop target: `READY FOR HOUSE/SOL REVIEW R3`.
 Phase 2C remains HOLD. House/Sol must review the exact material remediation SHA persisted after this report is committed; this evidence does not self-approve the remediation.
+
+## Post-Commit Pin
+
+- Exact material remediation SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
+- Material push target: `origin/feature/central-billing-phase2-runtime`
+- Material remote parity immediately after push: `0/0`
+- Material tracked status immediately after push: clean
+- House/Sol R3 must review the exact material SHA above. The later checkpoint-only commit records this pin and Task transition; it does not change remediation source logic.
