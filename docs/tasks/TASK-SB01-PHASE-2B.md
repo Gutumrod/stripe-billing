@@ -42,19 +42,30 @@ Owner approved preparation of SB01 as the first Long-Run Relay pilot covering Ph
 Canonical House Long-Run brief:
 `docs/platform/billing-core/BRIEF-SB01-LONG-RUN-RELAY-PHASE2C-2F-2026-09-12.md`
 
-House brief commit:
-`850caf8c3d00a923697a9c4f2dab5007bbccefef`
+Current House brief commit:
+`9ef541dda458ff03e311c4e38fb68dacadb50367`
 
-Intended orchestration flow:
-- Hermes = orchestrate/gate/track only
-- AGY = primary builder per stage, subject to readiness/role-fit
-- Codex = revision-bound checkpoint verifier
-- QA defect first returns to original Builder per Relay runtime contract
-- one AGY repair opportunity
-- Claude precision remediation only under the bounded escalation conditions in the Long-Run brief
-- fresh Codex verification after remediation
-- automatic stage advance only after deterministic gate + Codex PASS
-- final hard stop: `READY FOR SOL/OWNER REVIEW — SB01 PHASE 2F PROJECTION CONTRACT`
+## Locked Long-Run role map
+
+- `Hermes` = Orchestrator / Clerk only. Holds plan/stage/checkpoint/dispatch/evidence/routing mechanics. No source implementation and no quality classification.
+- `AGY + Qwen` = primary workers / implementation labor. Receive bounded non-overlapping stage packages and ordinary repair work.
+- `Codex` = head verifier / checkpoint authority. Reviews exact SHA and returns one of: `PASS`, `FIX_BY_AGY`, `FIX_BY_QWEN`, `SEND_TO_CLAUDE`, `SOL_OWNER_DECISION_REQUIRED`.
+- `Claude` = difficult-work closer only. Used only when Codex sends difficult/substantive work or Sol explicitly authorizes a hard closure package.
+- `Sol` = Commander / Architect / Final Verify.
+- `Owner` = Final Authority.
+
+Normal route:
+`AGY/Qwen -> deterministic gate -> Codex -> PASS/FIX/SEND_TO_CLAUDE/OWNER_STOP -> Hermes routes mechanically`.
+
+Repair guard:
+- one ordinary bounded repair selected by Codex;
+- fresh Codex re-verification;
+- difficult/substantive unresolved work -> Claude once;
+- fresh Codex re-verification;
+- still not PASS -> Sol/Owner hard stop.
+
+Final hard stop:
+`READY FOR SOL/OWNER REVIEW — SB01 PHASE 2F PROJECTION CONTRACT`.
 
 ## Execution HOLD — Relay runtime parity
 
@@ -72,7 +83,7 @@ Relay preflight requires this mismatch to fail closed. Do not run Hermes, materi
 
 - No Phase 2C execution.
 - No Hermes Long-Run launch.
-- No substantive AGY/Claude/Codex execution for Phase 2C-2F.
+- No substantive AGY/Qwen/Claude/Codex execution for Phase 2C-2F.
 - No LAB/production/database mutation.
 - No Stripe/provider call.
 - No Control Plane Billing work.
@@ -84,6 +95,6 @@ Relay preflight requires this mismatch to fail closed. Do not run Hermes, materi
 Preparation/governance only:
 1. resolve and persist canonical `WF-RELAY-01` / `kanban-external-agent-dispatch` version parity;
 2. fresh-session verify the resolved runtime path/version/hash;
-3. materialize a revision-pinned Relay plan/task graph from the House Long-Run brief;
+3. materialize a revision-pinned Relay plan/task graph from House brief `9ef541dda458ff03e311c4e38fb68dacadb50367`;
 4. present the launch packet to Owner;
 5. execute only after explicit launch instruction.
