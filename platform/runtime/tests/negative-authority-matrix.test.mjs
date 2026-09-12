@@ -865,9 +865,13 @@ test('negative authority: portal return_ref outside the allowlist fails closed',
     assert.equal(stripeState.createdSessions.length, sessionsAfterSetup, 'no new checkout or portal object may be created');
     assert.equal(stripeState.createdCustomers.length, 1, 'no additional customer may be created');
     const portalOps = [...mockDb.operations.values()].filter((op) => op.route === '/v1/portal');
-    assert.equal(portalOps.length, 1, 'the denied portal attempt is recorded only in the idempotency ledger');
-    assert.equal(portalOps[0].status, 'failed', 'the denied portal operation must not complete');
-    assert.equal(portalOps[0].errorCode, 'RETURN_REF_DENIED', 'the ledger records the denial code');
+    assert.equal(portalOps.length, 0, 'the denied portal attempt must create no operation row');
+    assert.equal(mockDb.operations.size, 1, 'only the setup checkout operation row exists');
+    assert.equal(
+      mockDb.auditEvents.filter((event) => event.eventName === 'portal.created').length,
+      0,
+      'the denied portal attempt must create no audit row',
+    );
   } finally {
     await close();
   }

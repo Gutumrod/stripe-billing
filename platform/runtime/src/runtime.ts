@@ -363,6 +363,9 @@ export class CentralBillingRuntime {
     if (!mapping?.providerCustomerId) {
       throw new BillingRuntimeError('PORTAL_CUSTOMER_NOT_FOUND', 'No provider customer mapping for account', 404);
     }
+    // Validate the portal return URL allowlist before any durable ledger write: a denied
+    // arbitrary return ref must create no operation row, audit row, or provider call.
+    this.returnUrl(authority.profile, 'portal', returnRef);
     const fingerprint = await requestFingerprint({
       route: '/v1/portal', accountId, operationId, returnRef,
       productId: authority.profile.productId, profileVersion: authority.profile.profileVersion,

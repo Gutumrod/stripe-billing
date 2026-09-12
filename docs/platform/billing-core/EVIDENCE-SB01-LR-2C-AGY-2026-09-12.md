@@ -150,4 +150,3 @@ Executed against the exact working revision:
 ## 8. Checkpoint Stop
 
 `READY FOR QWEN LR-2C HANDOFF`
-
