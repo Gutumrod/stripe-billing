@@ -1,0 +1,172 @@
+{
+    "plan_id":  "SB01-LONG-RUN-2C-2F-001",
+    "status":  "READY_FOR_OWNER_LAUNCH",
+    "task_id":  "SB01-LONG-RUN-2C-2F-001",
+    "workflow":  {
+                     "id":  "WF-RELAY-01",
+                     "spec_version":  "1.2.0",
+                     "runtime":  "kanban-external-agent-dispatch v2.3.8",
+                     "work_type":  "DIRECT-APPROVED",
+                     "release_policy":  "RELAY_STANDARD"
+                 },
+    "source_of_truth":  {
+                            "house_brief":  "docs/platform/billing-core/BRIEF-SB01-LONG-RUN-RELAY-PHASE2C-2F-2026-09-12.md",
+                            "house_brief_commit":  "fa0691e0236346858c4fbaf4cd3f23075dfe5d13",
+                            "accepted_phase2b_material_sha":  "6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895"
+                        },
+    "target":  {
+                   "repository":  "Gutumrod/stripe-billing",
+                   "workspace":  "D:\\AI-Workspace\\runtime\\worktrees\\sb01-central-billing-20260909",
+                   "local_branch":  "work/sb01-central-billing-pc-20260911",
+                   "remote_branch":  "feature/central-billing-phase2-runtime",
+                   "starting_revision":  "6e91973556767823bb69888da70b034a161671f0"
+               },
+    "roles":  {
+                  "orchestrator":  "Hermes",
+                  "primary_workers":  [
+                                          "AGY",
+                                          "Qwen"
+                                      ],
+                  "head_verifier":  "Codex",
+                  "difficult_work_closer":  "Claude",
+                  "commander":  "Sol",
+                  "final_authority":  "Owner"
+              },
+    "preflight":  {
+                      "node":  "PRE-01",
+                      "owner":  "Hermes",
+                      "must_pass_before_substantive_release":  true,
+                      "failure_behavior":  "STOP",
+                      "runtime_version":  "2.3.8",
+                      "runtime_sha256":  "F8AFFA7C0430FA645581129BB01B60C5AF2BEA2CA36CD1C5C9E853CA2B4CD809"
+                  },
+    "default_stage_pattern":  [
+                                  "AGY_BUILD",
+                                  "QWEN_BUILD_OR_TEST_EVIDENCE",
+                                  "DETERMINISTIC_GATE",
+                                  "CODEX_INDEPENDENT_QA"
+                              ],
+    "parallelism":  {
+                        "default":  false,
+                        "reason":  "Sequential primary workers prevent overlapping write scopes and preserve revision-bound handoff."
+                    },
+    "stages":  [
+                   {
+                       "id":  "LR-2C",
+                       "objective":  "HTTP + Stripe Test vertical slice",
+                       "depends_on":  [
+                                          "PRE-01"
+                                      ],
+                       "workers":  [
+                                       {
+                                           "agent":  "AGY",
+                                           "context_mode":  "BUILD",
+                                           "purpose":  "Core implementation and minimal regression proof"
+                                       },
+                                       {
+                                           "agent":  "Qwen",
+                                           "context_mode":  "BUILD",
+                                           "purpose":  "Bounded negative-authority/test/evidence expansion on exact AGY return SHA"
+                                       }
+                                   ],
+                       "verifier":  {
+                                        "agent":  "Codex",
+                                        "context_mode":  "INDEPENDENT-QA"
+                                    }
+                   },
+                   {
+                       "id":  "LR-2D",
+                       "objective":  "Webhook durability + reconciliation",
+                       "depends_on":  [
+                                          "LR-2C:PASS"
+                                      ],
+                       "workers":  [
+                                       {
+                                           "agent":  "AGY",
+                                           "context_mode":  "BUILD",
+                                           "purpose":  "Webhook/reconciliation implementation"
+                                       },
+                                       {
+                                           "agent":  "Qwen",
+                                           "context_mode":  "BUILD",
+                                           "purpose":  "Replay/retry/lease/dead-letter/out-of-order evidence and tests"
+                                       }
+                                   ],
+                       "verifier":  {
+                                        "agent":  "Codex",
+                                        "context_mode":  "INDEPENDENT-QA"
+                                    }
+                   },
+                   {
+                       "id":  "LR-2E",
+                       "objective":  "Entitlement + multi-Product isolation",
+                       "depends_on":  [
+                                          "LR-2D:PASS"
+                                      ],
+                       "workers":  [
+                                       {
+                                           "agent":  "AGY",
+                                           "context_mode":  "BUILD",
+                                           "purpose":  "Entitlement/runtime implementation"
+                                       },
+                                       {
+                                           "agent":  "Qwen",
+                                           "context_mode":  "BUILD",
+                                           "purpose":  "PS01/LK01 isolation, idempotency, monotonicity evidence and tests"
+                                       }
+                                   ],
+                       "verifier":  {
+                                        "agent":  "Codex",
+                                        "context_mode":  "INDEPENDENT-QA"
+                                    }
+                   },
+                   {
+                       "id":  "LR-2F",
+                       "objective":  "Control read-contract projection",
+                       "depends_on":  [
+                                          "LR-2E:PASS"
+                                      ],
+                       "workers":  [
+                                       {
+                                           "agent":  "AGY",
+                                           "context_mode":  "BUILD",
+                                           "purpose":  "Bounded SB01 projection implementation where required"
+                                       },
+                                       {
+                                           "agent":  "Qwen",
+                                           "context_mode":  "BUILD",
+                                           "purpose":  "Read-contract/documentation/test evidence; no Control mutation implementation"
+                                       }
+                                   ],
+                       "verifier":  {
+                                        "agent":  "Codex",
+                                        "context_mode":  "INDEPENDENT-QA"
+                                    },
+                       "on_pass":  "HARD_STOP_READY_FOR_SOL_OWNER_REVIEW"
+                   }
+               ],
+    "routing":  {
+                    "PASS":  "Persist checkpoint and advance only to the next already-authorized SB01 stage; LR-2F PASS hard-stops.",
+                    "FIX_BY_AGY":  "Fresh bounded AGY remediation dispatch, then deterministic gate and Codex INFORMED-VERIFY.",
+                    "FIX_BY_QWEN":  "Fresh bounded Qwen remediation dispatch, then deterministic gate and Codex INFORMED-VERIFY.",
+                    "SEND_TO_CLAUDE":  "Fresh bounded Claude difficult-work dispatch, then deterministic gate and Codex INFORMED-VERIFY.",
+                    "SOL_OWNER_DECISION_REQUIRED":  "Hard stop; no dependent stage release."
+                },
+    "repair_guard":  {
+                         "ordinary_repairs_max":  1,
+                         "claude_closure_rounds_max":  1,
+                         "after_exhaustion":  "SOL_OWNER_DECISION_REQUIRED"
+                     },
+    "final_hard_stop":  "READY FOR SOL/OWNER REVIEW — SB01 PHASE 2F PROJECTION CONTRACT",
+    "prohibited":  [
+                       "live Stripe keys or charges",
+                       "production mutation",
+                       "Control Plane payment mutation",
+                       "merge/release/deploy",
+                       "BK01 live migration",
+                       "MT01 billing integration",
+                       "PromptPay recurring billing",
+                       "silent agent substitution",
+                       "unbounded retry loops"
+                   ]
+}
