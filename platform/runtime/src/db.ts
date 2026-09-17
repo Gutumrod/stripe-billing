@@ -339,8 +339,8 @@ export class BillingDb {
         [input.providerEventId, input.eventType, input.livemode,
          input.mapping?.environment ?? null, input.mapping?.productId ?? null,
          input.mapping?.accountId ?? null, input.mapping?.profileVersion ?? null,
-         input.providerObjectId, input.providerCustomerId, JSON.stringify(input.hints),
-         JSON.stringify(input.normalizedEnvelope), input.mapping ? 'pending' : 'skipped', input.correlationId],
+         input.providerObjectId, input.providerCustomerId, tx.json(input.hints as unknown as JsonRecord),
+         tx.json(input.normalizedEnvelope as unknown as JsonRecord), input.mapping ? 'pending' : 'skipped', input.correlationId],
       );
       const duplicate = inserted.length === 0;
       const eventRow = inserted[0] ?? (await tx.unsafe(
@@ -358,7 +358,7 @@ export class BillingDb {
            values ($1::uuid,$2,$3,$4,$5,'reconcile',$6::jsonb,'pending',$7,$8::uuid)
            on conflict (dedupe_key) do update set ${OUTBOX_LEASE_PRESERVING_CONFLICT_SET}`,
           [eventRow.id, input.mapping!.environment, input.mapping!.productId, input.mapping!.accountId,
-           input.mapping!.profileVersion, JSON.stringify({ providerEventId: input.providerEventId,
+           input.mapping!.profileVersion, tx.json({ providerEventId: input.providerEventId,
              providerObjectId: input.providerObjectId, providerCustomerId: input.providerCustomerId }),
            dedupeKey, input.correlationId],
         );
@@ -562,9 +562,9 @@ export class BillingDb {
          values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11::jsonb,$12,'pending',$13::uuid,$14::timestamptz)
          on conflict (idempotency_key) do nothing returning id::text`,
         [envelope.environment, envelope.product_id, envelope.account_id, envelope.profile_version,
-         envelope.plan_id, envelope.transition_type, JSON.stringify(envelope.entitlement_keys),
+         envelope.plan_id, envelope.transition_type, tx.json(envelope.entitlement_keys),
          envelope.provider_subscription_id, envelope.transition_version, envelope.idempotency_key,
-         JSON.stringify(envelope), input.signed.signature, envelope.correlation_id, envelope.issued_at],
+         tx.json(envelope as unknown as JsonRecord), input.signed.signature, envelope.correlation_id, envelope.issued_at],
       );
       const created = inserted.length === 1;
       const transitionId = created ? String(inserted[0].id) : String((await tx.unsafe(
@@ -578,7 +578,7 @@ export class BillingDb {
          values ($1::uuid,$2,$3,$4,$5,'entitlement_test_sink',$6::jsonb,'pending',$7,$8::uuid)
          on conflict (dedupe_key) do nothing`,
         [input.providerEventDbId, envelope.environment, envelope.product_id, envelope.account_id,
-         envelope.profile_version, JSON.stringify({ transitionId, signed: input.signed }), dedupeKey,
+         envelope.profile_version, tx.json({ transitionId, signed: input.signed } as unknown as JsonRecord), dedupeKey,
          envelope.correlation_id],
       );
       return { transitionId, created };
@@ -617,8 +617,8 @@ export class BillingDb {
              signed_envelope=excluded.signed_envelope, signature=excluded.signature, applied_at=now()
            where ${sinkTable}.latest_transition_version < excluded.latest_transition_version`,
           [envelope.environment, envelope.product_id, envelope.account_id, envelope.profile_version,
-           envelope.plan_id, envelope.transition_type, JSON.stringify(envelope.entitlement_keys),
-           envelope.provider_subscription_id, envelope.transition_version, JSON.stringify(envelope),
+           envelope.plan_id, envelope.transition_type, tx.json(envelope.entitlement_keys),
+           envelope.provider_subscription_id, envelope.transition_version, tx.json(envelope as unknown as JsonRecord),
            input.signed.signature],
         );
       }
