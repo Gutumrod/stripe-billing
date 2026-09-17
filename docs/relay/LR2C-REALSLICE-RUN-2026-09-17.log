@@ -1,0 +1,103 @@
+# SB01 LR-2C real TEST slice — run 2026-09-17T19:12:38.124536
+# harness sha256: bb97624c3a8e5d4db3a6026b69d7a3b82ebacdb1bad0b7b4f8b377913cc0096a
+=== SB01 LR-2C FIX-01 REAL TEST VERTICAL SLICE ===
+run tag: fc7f5393
+stripe key: PRESENT prefix=sk_test_… len=107 (sk_test_ gate passed)
+webhook secret: PRESENT prefix=whsec_… len=70
+db url: PRESENT host=aws-1-ap-southeast-1.pooler.supabase.com:5432
+[PASS] WSTERA LAB billing_core_staging reachable (select 1)
+[PASS] billing_core_staging tables present :: tables=16
+{"level":"info","event":"billing.runtime.initialized","environment":"test","schema":"billing_core_staging","admissionTestMode":true,"credentialCount":2}
+[PASS] runtime.initialize() PASS (db ping + credential bindings against WSTERA LAB)
+pre-existing outbox jobs drained: 0
+Core HTTP boundary listening on http://127.0.0.1:8787 (stripe listen forwards /webhooks/stripe here)
+--- Phase 1: server-side authority override denials through real HTTP ---
+{"level":"error","event":"billing.request.failed","path":"/v1/checkout","code":"CALLER_AUTHORITY_OVERRIDE","status":400,"retryable":false}
+[PASS] body price_id override denied :: status=400 code=CALLER_AUTHORITY_OVERRIDE
+{"level":"error","event":"billing.request.failed","path":"/v1/checkout","code":"CALLER_AUTHORITY_OVERRIDE","status":400,"retryable":false}
+[PASS] body amount_minor/currency override denied :: status=400 code=CALLER_AUTHORITY_OVERRIDE
+{"level":"error","event":"billing.request.failed","path":"/v1/checkout","code":"CALLER_AUTHORITY_OVERRIDE","status":400,"retryable":false}
+[PASS] body customer_id/success_url override denied :: status=400 code=CALLER_AUTHORITY_OVERRIDE
+{"level":"error","event":"billing.request.failed","path":"/v1/checkout","code":"RETURN_REF_DENIED","status":400,"retryable":false}
+[PASS] unallowlisted success_return_ref denied :: status=400 code=RETURN_REF_DENIED
+{"level":"error","event":"billing.request.failed","path":"/v1/checkout","code":"CALLER_AUTHORITY_OVERRIDE","status":400,"retryable":false}
+[PASS] query parameter spoofing denied :: status=400 code=CALLER_AUTHORITY_OVERRIDE
+{"level":"error","event":"billing.request.failed","path":"/v1/checkout","code":"PLAN_NOT_CHECKOUT_ELIGIBLE","status":409,"retryable":false}
+[PASS] cross-product plan (LK01-only plan under PS01 credential) denied :: status=409 code=PLAN_NOT_CHECKOUT_ELIGIBLE
+[PASS] environment override (live credential binding) denied at initialize()
+[PASS] authority denials created no operation rows :: operations=0
+[PASS] authority denials created no customer mapping rows :: provider_customers=0
+--- Phase 2: real PS01 Stripe Test checkout via Core HTTP boundary ---
+[PASS] real PS01 Test checkout via Core HTTP boundary returned 201 :: status=201 code=
+[PASS] real Stripe Test checkout session created (cs_test_…) :: session=cs_test_a1bx…pUom
+[PASS] WSTERA LAB runtime_operations row completed for the operation :: status=completed
+[PASS] WSTERA LAB runtime_provider_customers row ready with provider mapping :: customer=cus_VHCaoyWC…7W6m state=ready
+[PASS] re-fetched checkout session (financial truth) livemode=false (TEST object) :: livemode=false
+[PASS] Stripe Test session re-fetch confirms server-derived values :: amount_total=99000 currency=thb price=price_1UDCxy…WZ1c
+[PASS] payer-side session completion route absent in Stripe Test backend API (probed, documented) :: status=404 error=Unrecognized request URL (POST: /v1/checkout/sessions/cs_test_a1bxhQkrd2AihiZoAntpxoUQIBUy0jzaN6P2FrWorezG6yVEEE3Hy2pUom/confirm). Please se
+--- Phase 3: idempotent replay re-fetch (financial truth) ---
+[PASS] idempotent replay returned 200 with replay flag and same session :: status=200 replay=true
+[PASS] replay re-fetched the real Stripe Test session (no duplicate created) :: livemode=false
+--- Phase 4: portal authority ---
+{"level":"error","event":"billing.request.failed","path":"/v1/portal","code":"PORTAL_CUSTOMER_NOT_FOUND","status":404,"retryable":false}
+[PASS] portal for account with no customer mapping denied 404 :: status=404 code=PORTAL_CUSTOMER_NOT_FOUND
+[PASS] denied portal (no mapping) created no operation row :: operations=0
+{"level":"error","event":"billing.request.failed","path":"/v1/portal","code":"RETURN_REF_DENIED","status":400,"retryable":false}
+[PASS] arbitrary portal return_ref denied 400 :: status=400 code=RETURN_REF_DENIED
+[PASS] denied arbitrary portal return_ref created no operation row :: operations=1 (only the completed checkout row expected)
+[PASS] denied arbitrary portal return_ref created no portal audit row :: portal.created audit rows=0
+--- Phase 5: real webhook intake via live stripe listen → Core HTTP boundary ---
+stripe trigger checkout.session.completed #1: ok (Checking for new versions...)
+stripe trigger checkout.session.completed #2: ok (Checking for new versions...)
+[PASS] stripe trigger fixtures generated real Test events :: triggered=2
+[PASS] real Stripe Test webhook events delivered via stripe listen → Core HTTP intake :: events=2 types=checkout.session.completed,checkout.session.completed
+[PASS] received webhook events are Stripe TEST livemode=false :: livemodes=false,false
+[PASS] listener-delivered event re-fetchable from Stripe Test API (event identity confirmed) :: event=evt_1UGeBKHB…36WS type=checkout.session.completed
+--- Phase 6: unmapped webhook intake = durable claim, zero billing side effect ---
+[PASS] listener-delivered unmapped fixture events durably claimed as skipped :: statuses=skipped,skipped
+[PASS] unmapped fixture intake created no entitlement/reconciliation/outbox rows :: sink=0 reconcile=0 outbox=0
+[PASS] reconcile → entitlement pipeline against real provider objects: LR-2D scope (untested here) :: no completed payer session available in Test backend API (see Phase 5 note)
+--- Phase 7: cross-product credential isolation (real) ---
+[PASS] LK01 credential completes its own real Test checkout (isolation control) :: status=201 session=cs_test_a1Lz…gBwb
+[PASS] LK01 customer mapping isolated from PS01 :: customer=cus_VHCa6c0n…YXec
+[PASS] LK01 session re-fetch confirms LK01-pinned price (authority model holds cross-product) :: price=price_1UDCxz…ipHY
+--- Phase 8: webhook denial paths (real webhook secret) ---
+{"level":"error","event":"billing.request.failed","path":"/webhooks/stripe","code":"WEBHOOK_TIMESTAMP_INVALID","status":400,"retryable":false}
+[PASS] stale-timestamp webhook denied 400 (real whsec_ signature) :: status=400 code=WEBHOOK_TIMESTAMP_INVALID
+[PASS] stale webhook created no durable provider-event row :: rows=0
+{"level":"error","event":"billing.request.failed","path":"/webhooks/stripe","code":"LIVE_WEBHOOK_DENIED","status":403,"retryable":false}
+[PASS] livemode=true webhook denied 403 (validly signed, real whsec_) :: status=403 code=LIVE_WEBHOOK_DENIED
+[PASS] live webhook created no durable provider event row :: rows=0
+--- Phase 9: final verification ---
+[PASS] final Stripe Test re-fetch: financial truth = TEST session, server-derived fields intact :: livemode=false amount=99000
+[PASS] durable side effects bounded to the proven slice :: operations=2 customers=2 (2 checkout + 0-1 portal rows, PS01+LK01 mappings)
+[PASS] webhook intake durable rows bounded to listener deliveries :: provider_events delta=2
+[PASS] no outbox jobs created (unmapped fixture intake skips job enqueue by design) :: outbox delta=0
+[PASS] webhook.intake audit rows recorded for delivered events :: audit rows=2
+=== SUMMARY ===
+{
+  "run_tag": "fc7f5393",
+  "total_checks": 45,
+  "passed": 45,
+  "failed": 0,
+  "checkout_session": "cs_test_a1bx…pUom",
+  "provider_customer": "cus_VHCaoyWC…7W6m",
+  "webhook_events": [
+    "evt_1UGeBKHB…36WS",
+    "evt_1UGeBOHB…sI5n"
+  ]
+}
+--- cleanup: Stripe Test objects + scoped WSTERA LAB rows ---
+stripe customer deleted: cus_VHCaoyWC…7W6m deleted=true
+stripe customer deleted: cus_VHCa6c0n…YXec deleted=true
+db cleanup runtime_entitlement_test_sink: 0 row(s) deleted
+db cleanup runtime_entitlement_transitions: 0 row(s) deleted
+db cleanup runtime_outbox_jobs: 0 row(s) deleted
+db cleanup runtime_provider_events: 0 row(s) deleted
+db cleanup runtime_reconciliation_state: 0 row(s) deleted
+db cleanup runtime_audit_events: 2 row(s) deleted
+db cleanup runtime_provider_customers: 2 row(s) deleted
+db cleanup runtime_operations: 2 row(s) deleted
+db cleanup runtime_credential_bindings: 2 row(s) deleted
+
+# HARNESS_EXIT=0

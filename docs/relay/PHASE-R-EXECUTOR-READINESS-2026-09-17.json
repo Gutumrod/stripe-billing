@@ -1,0 +1,80 @@
+{
+  "agent-claude": {
+    "ok": true,
+    "meta": {
+      "executor_identity": "agent-claude",
+      "declared_agent_identity": "agent-claude",
+      "executor_registration": "claude-code-cli",
+      "execution_backend": "direct_external_process",
+      "transport_model": "none",
+      "version": "2.1.269 (Claude Code)",
+      "executable": "D:\\AI-Workspace\\runtime\\npm-global\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe",
+      "wrapper": null,
+      "executable_health": {
+        "status": "PASS",
+        "executable": "D:\\AI-Workspace\\runtime\\npm-global\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe",
+        "version": "2.1.269 (Claude Code)",
+        "wrapper": null
+      },
+      "auth_readiness": {
+        "status": "PASS",
+        "method": "claude_auth_status",
+        "detail": "json_logged_in_true"
+      },
+      "invocation_probe": {
+        "status": "PASS",
+        "method": "claude_plan_probe",
+        "detail": "READY"
+      },
+      "provenance": {
+        "declared_agent_identity": "agent-claude",
+        "executor_identity": "agent-claude",
+        "executor_registration": "claude-code-cli",
+        "execution_backend": "direct_external_process",
+        "transport_model": "none"
+      },
+      "executor_ready": true,
+      "EXECUTOR_READY": "PASS"
+    }
+  },
+  "agent-qwen": {
+    "ok": true,
+    "meta": {
+      "executor_identity": "agent-qwen",
+      "declared_agent_identity": "agent-qwen",
+      "executor_registration": "qwen-wrapper",
+      "execution_backend": "direct_external_process",
+      "transport_model": "none",
+      "version": "0.23.3",
+      "executable": "D:\\AI-Workspace\\runtime\\npm-global\\npm\\qwen.cmd",
+      "wrapper": "D:\\AI-Workspace\\runtime\\hermes-native\\data\\skills\\devops\\kanban-external-agent-dispatch\\scripts\\invoke-qwen-worker.ps1",
+      "executable_health": {
+        "status": "PASS",
+        "executable": "D:\\AI-Workspace\\runtime\\npm-global\\npm\\qwen.cmd",
+        "version": "0.23.3",
+        "wrapper": "D:\\AI-Workspace\\runtime\\hermes-native\\data\\skills\\devops\\kanban-external-agent-dispatch\\scripts\\invoke-qwen-worker.ps1",
+        "wrapper_sha256": "sha256:ea33c85e1504769a270b4021e3c362d7b9a53459931376ee12d452f527e5a771"
+      },
+      "auth_readiness": {
+        "status": "PASS",
+        "method": "qwen_provider_prerequisites",
+        "detail": "settings:glm-5.3-flash:cloud"
+      },
+      "invocation_probe": {
+        "status": "PASS",
+        "method": "qwen_readiness_probe",
+        "detail": "READY"
+      },
+      "provenance": {
+        "declared_agent_identity": "agent-qwen",
+        "executor_identity": "agent-qwen",
+        "executor_registration": "qwen-wrapper",
+        "execution_backend": "direct_external_process",
+        "transport_model": "none"
+      },
+      "executor_ready": true,
+      "EXECUTOR_READY": "PASS",
+      "wrapper_sha256": "sha256:ea33c85e1504769a270b4021e3c362d7b9a53459931376ee12d452f527e5a771"
+    }
+  }
+}

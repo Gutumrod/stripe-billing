@@ -1,0 +1,274 @@
+TAP version 13
+# Subtest: valid PS01 Test checkout creates checkout session through real HTTP server boundary
+ok 1 - valid PS01 Test checkout creates checkout session through real HTTP server boundary
+  ---
+  duration_ms: 49.5049
+  type: 'test'
+  ...
+# Subtest: idempotent replay of completed checkout re-fetches Stripe Test session and returns 200
+ok 2 - idempotent replay of completed checkout re-fetches Stripe Test session and returns 200
+  ---
+  duration_ms: 14.7494
+  type: 'test'
+  ...
+# Subtest: idempotency conflict fails closed when operation ID is reused with different request
+ok 3 - idempotency conflict fails closed when operation ID is reused with different request
+  ---
+  duration_ms: 10.1098
+  type: 'test'
+  ...
+# Subtest: negative authority: caller cannot override Stripe Price ID in request body
+ok 4 - negative authority: caller cannot override Stripe Price ID in request body
+  ---
+  duration_ms: 5.7803
+  type: 'test'
+  ...
+# Subtest: negative authority: caller cannot override amount or currency in request body
+ok 5 - negative authority: caller cannot override amount or currency in request body
+  ---
+  duration_ms: 5.4188
+  type: 'test'
+  ...
+# Subtest: negative authority: caller cannot override provider customer ID or return URLs
+ok 6 - negative authority: caller cannot override provider customer ID or return URLs
+  ---
+  duration_ms: 6.1714
+  type: 'test'
+  ...
+# Subtest: negative authority: unallowlisted return URL ref fails closed
+ok 7 - negative authority: unallowlisted return URL ref fails closed
+  ---
+  duration_ms: 6.7333
+  type: 'test'
+  ...
+# Subtest: negative authority: query params on POST /v1/checkout fail closed
+ok 8 - negative authority: query params on POST /v1/checkout fail closed
+  ---
+  duration_ms: 5.8717
+  type: 'test'
+  ...
+# Subtest: negative authority: prohibited x-wstera-* headers fail closed
+ok 9 - negative authority: prohibited x-wstera-* headers fail closed
+  ---
+  duration_ms: 6.0575
+  type: 'test'
+  ...
+# Subtest: negative authority: missing or tampered account assertion fails closed
+ok 10 - negative authority: missing or tampered account assertion fails closed
+  ---
+  duration_ms: 18.8249
+  type: 'test'
+  ...
+# Subtest: negative authority: cross-product credential mismatch fails closed
+ok 11 - negative authority: cross-product credential mismatch fails closed
+  ---
+  duration_ms: 4.2685
+  type: 'test'
+  ...
+# Subtest: negative authority: expired account assertion fails closed
+ok 12 - negative authority: expired account assertion fails closed
+  ---
+  duration_ms: 4.8723
+  type: 'test'
+  ...
+# Subtest: negative authority: live Stripe mode fails closed in Phase 2 Test runtime
+ok 13 - negative authority: live Stripe mode fails closed in Phase 2 Test runtime
+  ---
+  duration_ms: 4.7865
+  type: 'test'
+  ...
+# Subtest: negative authority: LK01 credential is pinned to LK01 profile and cannot reach PS01 checkout slice
+ok 14 - negative authority: LK01 credential is pinned to LK01 profile and cannot reach PS01 checkout slice
+  ---
+  duration_ms: 47.9018
+  type: 'test'
+  ...
+# Subtest: negative authority: caller cannot supply product_id in checkout request body
+ok 15 - negative authority: caller cannot supply product_id in checkout request body
+  ---
+  duration_ms: 8.2008
+  type: 'test'
+  ...
+# Subtest: negative authority: plan_id cannot select another product plan through the pinned profile
+ok 16 - negative authority: plan_id cannot select another product plan through the pinned profile
+  ---
+  duration_ms: 6.9957
+  type: 'test'
+  ...
+# Subtest: negative authority: live-environment credential is denied by the Test-only runtime
+ok 17 - negative authority: live-environment credential is denied by the Test-only runtime
+  ---
+  duration_ms: 5.4886
+  type: 'test'
+  ...
+# Subtest: negative authority: runtime constructor denies live environment and non-staging schema
+ok 18 - negative authority: runtime constructor denies live environment and non-staging schema
+  ---
+  duration_ms: 0.5921
+  type: 'test'
+  ...
+# Subtest: negative authority: assertion environment claim cannot override credential environment
+ok 19 - negative authority: assertion environment claim cannot override credential environment
+  ---
+  duration_ms: 7.1697
+  type: 'test'
+  ...
+# Subtest: negative authority: assertion account_id mismatch with request body fails closed
+ok 20 - negative authority: assertion account_id mismatch with request body fails closed
+  ---
+  duration_ms: 6.8804
+  type: 'test'
+  ...
+# Subtest: negative authority: assertion signed for a different action is denied on the checkout route
+ok 21 - negative authority: assertion signed for a different action is denied on the checkout route
+  ---
+  duration_ms: 7.6088
+  type: 'test'
+  ...
+# Subtest: negative authority: assertion operation_id must match the requested operation
+ok 22 - negative authority: assertion operation_id must match the requested operation
+  ---
+  duration_ms: 5.6403
+  type: 'test'
+  ...
+# Subtest: negative authority: future-issued assertion and over-long assertion lifetime fail closed
+ok 23 - negative authority: future-issued assertion and over-long assertion lifetime fail closed
+  ---
+  duration_ms: 25.832
+  type: 'test'
+  ...
+# Subtest: negative authority: read route denies assertion bound to a different account
+ok 24 - negative authority: read route denies assertion bound to a different account
+  ---
+  duration_ms: 5.9373
+  type: 'test'
+  ...
+# Subtest: negative authority: portal request without provider customer mapping creates no portal session
+ok 25 - negative authority: portal request without provider customer mapping creates no portal session
+  ---
+  duration_ms: 5.4046
+  type: 'test'
+  ...
+# Subtest: negative authority: portal return_ref outside the allowlist fails closed
+ok 26 - negative authority: portal return_ref outside the allowlist fails closed
+  ---
+  duration_ms: 20.9264
+  type: 'test'
+  ...
+# Subtest: negative authority: caller cannot supply customer, return URL, or profile version in the body
+ok 27 - negative authority: caller cannot supply customer, return URL, or profile version in the body
+  ---
+  duration_ms: 42.508
+  type: 'test'
+  ...
+# Subtest: negative authority: credential from another product cannot verify a PS01-signed assertion
+ok 28 - negative authority: credential from another product cannot verify a PS01-signed assertion
+  ---
+  duration_ms: 4.1664
+  type: 'test'
+  ...
+# Subtest: negative authority: Stripe webhook livemode event is denied without durable claim
+ok 29 - negative authority: Stripe webhook livemode event is denied without durable claim
+  ---
+  duration_ms: 4.1818
+  type: 'test'
+  ...
+# Subtest: negative authority: replayed webhook with stale timestamp is denied
+ok 30 - negative authority: replayed webhook with stale timestamp is denied
+  ---
+  duration_ms: 3.1872
+  type: 'test'
+  ...
+# Subtest: negative authority: query parameters fail closed on healthz and portal routes
+ok 31 - negative authority: query parameters fail closed on healthz and portal routes
+  ---
+  duration_ms: 8.9024
+  type: 'test'
+  ...
+# Subtest: negative authority: credential pinned to an unregistered profile version cannot bootstrap
+ok 32 - negative authority: credential pinned to an unregistered profile version cannot bootstrap
+  ---
+  duration_ms: 0.9291
+  type: 'test'
+  ...
+# Subtest: shared conflict SET clause qualifies every existing-row RHS read via existing_job
+ok 33 - shared conflict SET clause qualifies every existing-row RHS read via existing_job
+  ---
+  duration_ms: 0.7405
+  type: 'test'
+  ...
+# Subtest: shared conflict SET clause leaves LHS assignment targets unqualified
+ok 34 - shared conflict SET clause leaves LHS assignment targets unqualified
+  ---
+  duration_ms: 0.2343
+  type: 'test'
+  ...
+# Subtest: claimWebhookEvent aliases its outbox INSERT target and uses the shared qualified clause
+ok 35 - claimWebhookEvent aliases its outbox INSERT target and uses the shared qualified clause
+  ---
+  duration_ms: 0.2409
+  type: 'test'
+  ...
+# Subtest: enqueueReconciliation aliases its outbox INSERT target and uses the shared qualified clause
+ok 36 - enqueueReconciliation aliases its outbox INSERT target and uses the shared qualified clause
+  ---
+  duration_ms: 0.1568
+  type: 'test'
+  ...
+# Subtest: unexpired processing lease is preserved on duplicate conflict (pre-fix bug: was reset to pending)
+ok 37 - unexpired processing lease is preserved on duplicate conflict (pre-fix bug: was reset to pending)
+  ---
+  duration_ms: 1.017
+  type: 'test'
+  ...
+# Subtest: dead_letter stays fail-closed on duplicate conflict
+ok 38 - dead_letter stays fail-closed on duplicate conflict
+  ---
+  duration_ms: 0.1054
+  type: 'test'
+  ...
+# Subtest: expired processing lease is recovered to pending (legitimate lease-expiry recovery, unchanged)
+ok 39 - expired processing lease is recovered to pending (legitimate lease-expiry recovery, unchanged)
+  ---
+  duration_ms: 0.0709
+  type: 'test'
+  ...
+# Subtest: pending job stays pending on duplicate conflict
+ok 40 - pending job stays pending on duplicate conflict
+  ---
+  duration_ms: 0.0647
+  type: 'test'
+  ...
+# Subtest: failed job is reset to pending on duplicate conflict (unchanged pre-existing behavior)
+ok 41 - failed job is reset to pending on duplicate conflict (unchanged pre-existing behavior)
+  ---
+  duration_ms: 0.1401
+  type: 'test'
+  ...
+# Subtest: completed job is reset to pending on duplicate conflict (unchanged pre-existing behavior)
+ok 42 - completed job is reset to pending on duplicate conflict (unchanged pre-existing behavior)
+  ---
+  duration_ms: 0.1232
+  type: 'test'
+  ...
+# Subtest: claimWebhookEvent durably persists hint_envelope, normalized_envelope, and outbox payload as real jsonb objects on live Postgres
+ok 43 - claimWebhookEvent durably persists hint_envelope, normalized_envelope, and outbox payload as real jsonb objects on live Postgres
+  ---
+  duration_ms: 1024.2253
+  type: 'test'
+  ...
+1..43
+# tests 43
+# suites 0
+# pass 43
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1148.868
+npm notice run @wstera/central-billing-runtime@0.1.0 test
+npm notice run npm run build && node --test tests/*.test.mjs
+npm notice run @wstera/central-billing-runtime@0.1.0 build
+npm notice run npm run build:registry && tsc -p tsconfig.json
+npm notice run @wstera/central-billing-runtime@0.1.0 build:registry
+npm notice run tsc -p ../profile-registry/tsconfig.json

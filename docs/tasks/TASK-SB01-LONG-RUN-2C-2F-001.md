@@ -1,9 +1,9 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `LR-2C FIX-01 — QWEN EXIT-55 DIAGNOSTIC COMPLETE (executor path FAIL) — RUNTIME REMEDIATION REQUIRED`
+Status: `LR-2C FIX-01 — AUTO_RECOVERY_IN_PROGRESS — QWEN EXECUTOR RUNTIME REMEDIATION`
 Workflow ID: `WF-RELAY-01`
-Workflow Spec Version: `1.2.0`
-Runtime Procedure: `kanban-external-agent-dispatch v2.3.8`
+Workflow Spec Version: `1.3.0`
+Runtime Procedure: `kanban-external-agent-dispatch v2.3.9`
 Work Type: `DIRECT-APPROVED`
 Release Policy: `RELAY_STANDARD`
 Repository: `Gutumrod/stripe-billing`
@@ -14,12 +14,10 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `(executor remediation hold — no FIX-01 retry)`
-Current Checkpoint: `QWEN EXIT-55 DIAGNOSTIC COMPLETE — executor path FAIL (ConPTY/AttachConsole)`
-Expected Stop: `SOL decides runtime remediation then release decision for FIX-01`
-Next Allowed Action: Sol approves bounded runtime remediation of the Qwen Windows executor console/pty
-attachment, then trivial qwen probe through dee.execute; only after that a fresh Qwen FIX-01 (Sol release).
-No auto-retry; no LR-2D advance.
+Current Worker: `(Codex escalation review for proven executor/runtime defect)`
+Current Checkpoint: `TECHNICAL_REMEDIATION_REQUIRED — QWEN EXIT-55 ROOT CAUSE CONFIRMED — AUTO-RECOVERY ENABLED`
+Expected Stop: `CODEX ROUTE -> SEND_TO_CLAUDE or SOL_OWNER_DECISION_REQUIRED; technical PASS resumes FIX-01`
+Next Allowed Action: Hermes creates a fresh Codex classification dispatch for the proven Qwen Windows executor defect. On `SEND_TO_CLAUDE`, dispatch one bounded Claude runtime remediation, run deterministic/trivial Qwen probe, and resume FIX-01 automatically on PASS. No LR-2D advance before LR-2C PASS.
 
 ## QWEN EXIT-55 DIAGNOSTIC RESULT (deterministic, 2026-09-12, Recovery B)
 
