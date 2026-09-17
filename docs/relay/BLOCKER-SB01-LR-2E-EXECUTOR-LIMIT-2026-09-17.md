@@ -45,7 +45,7 @@ Full canonical readiness probe re-run **once**, read-only:
 | `agent-qwen` | READY (`0.23.3`) | readiness only — **substantive execution still proven-broken** (exit 55, `docs/relay/CHAIN-FAILURE-SB01-LR-2D-QWEN-EXIT55-2026-09-17.md`) |
 | `agent-agy` | READY (`1.2.5`) | admissible only as `UI-UX-SPECIALIST` (presentation layer); LR-2E is backend/DB/entitlement → NOT admissible |
 | `agent-codex` | READY (`codex-cli 0.147.0`) | designated independent verifier → using it as builder would break reviewer independence for this stage |
-| `agent-opencode` | not admitted | not in the named production Relay executor registry |
+| `agent-opencode` | **NOT READY** — `invocation_failed` (`OPENCODE_PROVIDER_PATH_UNAVAILABLE`) | **superseded row — see §9 CORRECTION** |
 
 So there is currently **no admissible `CORE-BUILDER`** for LR-2E. This is a genuine (temporary)
 capacity blocker, not a routing preference.
@@ -101,3 +101,48 @@ resume, re-probe readiness and hold again rather than burning a dispatch.
 `LR-2E HELD — BLOCKED_EXTERNAL_ACCESS (builder session limit, resets 23:20 Asia/Bangkok)`.
 LR-2F must not be released. No Owner round-trip required: a safe authorized route exists and is
 scheduled.
+
+---
+
+## 9. CORRECTION / RECONCILIATION — OpenCode classification (appended 2026-09-17, after Owner review)
+
+**Appended, not rewritten.** §3's original table row for `agent-opencode` was accurate for the
+moment it was written (the probe did return `invocation_failed` and the executor was not usable),
+but its **stated reason was wrong**. The row is retained above and marked superseded; the correct
+facts are:
+
+- Agent Relay = `kanban-external-agent-dispatch` **v2.5.1**.
+- `agent-opencode` **IS** in `DIRECT_EXTERNAL_EXECUTORS` (`direct_external_executors.py:54` →
+  `"agent-opencode": "opencode-cli"`) — the earlier claim that it is absent from the registry was
+  **incorrect**.
+- Declared role = `PRIMARY_GENERAL_IMPLEMENTATION_WORKER` (`SKILL.md:143`).
+- Executable present, version **v2.0.3** (`D:\AI-Workspace\runtime\opencode\bin\opencode.cmd`).
+- Ollama model registry lists `deepseek-v4.1-flash:cloud`.
+- Current status = **`OPENCODE_PROVIDER_PATH_UNAVAILABLE`** — **not** `OPENCODE_NOT_ADMITTED`.
+
+Re-verified this session (exact readiness probe): `DIRECT_EXECUTOR_NOT_READY:agent-opencode:invocation_failed`
+in 0.3 s (fail-closed). Root cause is two-layered and was reproduced:
+
+1. **cwd/PWD handling** — `opencode` attempts to change directory to the MSYS-form path
+   (`/d/AI-Workspace/...`) even when Windows-form `cwd` is supplied; overriding the inherited MSYS
+   `PWD` env var moved execution past this point.
+2. **provider authentication** — past layer 1, the run fails with
+   `{"type":"provider.auth","message":"Unauthorized","status":401}`. Ollama itself is up
+   (`http://127.0.0.1:11434/api/tags` → HTTP 200) and no usable `ollama` provider credential/session
+   is configured for OpenCode.
+
+Also recorded (Owner-reported, confirmed): a readiness **timeout can leak a child
+`opencode.exe`** (`…\bin\opencode.exe serve --service`, observed pid 26308) because the driver's
+`subprocess.run(timeout=…)` does not reap grandchildren.
+
+Disposition:
+- Recorded as a **separate Relay runtime defect / housekeeping item outside SB01** —
+  `D:\AI-Workspace\runtime\hermes-native\data\housekeeping\RUNTIME-FINDING-opencode-provider-path-2026-09-17.md`.
+- **Scope NOT widened**: no repair attempted now; the Protected Skill was **not** modified
+  (sha256 still exactly `DBBD20A1AC5F9F930338FF87571683BE9F264082B096B547B16BDB6F54A63417`), and the
+  OpenCode model pin was **not** changed to bypass the problem.
+
+Routing rules remain unchanged: Claude session limit = external temporary blocker; OpenCode provider
+path = unavailable; Qwen exit-55 path = unavailable per existing evidence; Codex stays the
+independent verifier; AGY must not be used for backend/database/security-contract work. LR-2E resume
+stays scheduled; LR-2C and LR-2D are **not** reopened.

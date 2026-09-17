@@ -66,7 +66,16 @@ Prior blocker (2026-09-12): `QWEN WRAPPER_EXIT 55 / AttachConsole failed` (`@lyd
 
 **Disposition: CLOSED — NOT CURRENT.** A fresh canonical readiness probe through the current Relay registry returns `EXECUTOR_READY = PASS` for `agent-qwen` (exit 0, exact `READY` sentinel, no exit-55, no AttachConsole failure). Per brief §6 (probe once; if healthy, close the old blocker with evidence) the 2026-09-12 executor defect is closed with this evidence. No blind retry of a broken executor was required, and no silent agent substitution occurred.
 
-`agent-opencode` is NOT admitted: not a named production Relay executor in the current registry evidence (`references/current-routing-evidence.md`: "OpenCode is intentionally not added to the named production Relay executor registry"), and its readiness probe fails. Not used.
+`agent-opencode` is NOT usable: readiness returns `DIRECT_EXECUTOR_NOT_READY:agent-opencode:invocation_failed` (`OPENCODE_PROVIDER_PATH_UNAVAILABLE`). Not used.
+
+> **CORRECTION (appended 2026-09-17, original text preserved above):** an earlier version of this
+> line said OpenCode "is not a named production Relay executor". That was **wrong** —
+> `agent-opencode` IS in `DIRECT_EXTERNAL_EXECUTORS` (`direct_external_executors.py:54`) with role
+> `PRIMARY_GENERAL_IMPLEMENTATION_WORKER` (`SKILL.md:143`) and a present v2.0.3 executable. The line
+> quoted from `references/current-routing-evidence.md` is stale history. The correct current status
+> is `OPENCODE_PROVIDER_PATH_UNAVAILABLE`. This does not change the PHASE R verdict: the executor was
+> and remains unusable, so it was correctly not used. Finding recorded outside SB01 scope at
+> `D:\AI-Workspace\runtime\hermes-native\data\housekeeping\RUNTIME-FINDING-opencode-provider-path-2026-09-17.md`.
 
 ## 5. Canonical task / doc supersession check
 

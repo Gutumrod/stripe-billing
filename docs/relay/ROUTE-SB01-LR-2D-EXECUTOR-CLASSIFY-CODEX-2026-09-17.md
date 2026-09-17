@@ -26,6 +26,16 @@ Findings:
 
 5. Role admissibility resolves to Claude. Qwen is blocked by proven substantive executor failure. AGY is UI-only and backend/DB excluded. Codex is the independent verifier and must not become builder. OpenCode is not admitted. Claude is healthy and admissible as bounded `CORE-BUILDER`.
 
+> **CORRECTION (appended by Hermes 2026-09-17, Codex's original wording preserved above):** the
+> reviewer's phrase "OpenCode is not admitted" is **correct in outcome but imprecise in cause**.
+> `agent-opencode` IS a registered direct executor (`direct_external_executors.py:54`, role
+> `PRIMARY_GENERAL_IMPLEMENTATION_WORKER` per `SKILL.md:143`, executable present at v2.0.3); its
+> current status is **`OPENCODE_PROVIDER_PATH_UNAVAILABLE`** (fail-closed readiness
+> `invocation_failed`), not "not admitted". This does not change the routing verdict: Codex returned
+> `SEND_TO_CLAUDE` and Claude was the correct admissible builder. Finding recorded outside SB01
+> scope at
+> `D:\AI-Workspace\runtime\hermes-native\data\housekeeping\RUNTIME-FINDING-opencode-provider-path-2026-09-17.md`.
+
 Decision: this is a proven executor/runtime defect for Qwen in the substantive execution path. A blind Qwen retry is not technically justified because no changed condition exists. Owner decision is not required for routing because no Protected Skill repair or scope expansion is needed to continue.
 
 ROUTE: SEND_TO_CLAUDE

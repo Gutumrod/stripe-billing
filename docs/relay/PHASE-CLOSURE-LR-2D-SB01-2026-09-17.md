@@ -162,3 +162,26 @@ explicit and recorded.
 
 **LR-2E — entitlement + multi-product isolation** (PS01 + LK01) on the exact current revision.
 Released now that LR-2D is independently PASSed.
+
+---
+
+## CORRECTION / RECONCILIATION — OpenCode classification (appended 2026-09-17, no rewrite)
+
+§"Executor defect chain handled this phase" item 2 records the routing table as
+*"OpenCode not admitted"*. That **reason was wrong**, though the outcome at the time (executor not
+usable) was correct. Current verified facts:
+
+- `agent-opencode` **IS** registered in `DIRECT_EXTERNAL_EXECUTORS`
+  (`direct_external_executors.py:54`) with role `PRIMARY_GENERAL_IMPLEMENTATION_WORKER`
+  (`SKILL.md:143`); executable present at v2.0.3.
+- Its status is **`OPENCODE_PROVIDER_PATH_UNAVAILABLE`** — not `OPENCODE_NOT_ADMITTED`.
+- The earlier `references/current-routing-evidence.md` line ("intentionally not added to the named
+  production Relay executor registry") is **stale** relative to the live registry.
+
+The original text above is left as written. Full finding, root cause (cwd/`PWD` handling +
+`provider.auth` Unauthorized 401), and the confirmed child-process leak are recorded **outside the
+SB01 scope** at:
+`D:\AI-Workspace\runtime\hermes-native\data\housekeeping\RUNTIME-FINDING-opencode-provider-path-2026-09-17.md`.
+
+No SB01 rework was triggered by this correction: LR-2D's PASS rests on Qwen/Claude/Codex evidence and
+does not depend on OpenCode. LR-2C and LR-2D remain CLOSED and are not reopened.
