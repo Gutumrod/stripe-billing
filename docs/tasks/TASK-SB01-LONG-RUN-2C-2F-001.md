@@ -1,6 +1,6 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `LR-2C CLOSED / PASS — LR-2D NEXT`
+Status: `LR-2D CLOSED / PASS — LR-2E NEXT`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.3.0`
 Runtime Procedure: `kanban-external-agent-dispatch v2.5.1`
@@ -14,10 +14,28 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `(none — LR-2C closed; LR-2D not yet released)`
-Current Checkpoint: `LR-2C PASS at 4b2beb1ee2c05b154b5a306026dfa13d000ad913 — Codex VERDICT: PASS`
+Current Worker: `(none — LR-2D closed; LR-2E not yet released)`
+Current Checkpoint: `LR-2D PASS at c59fc85d3f996d571ebed68c27f4dad7ac9f9be1 — Codex VERDICT: PASS`
 Expected Stop: `LR-2F PASS -> READY_FOR_SOL_OWNER_FINAL_REVIEW`
-Next Allowed Action: Hermes releases LR-2D (webhook durability + reconciliation) on the exact current revision. LR-2C closure report: `docs/relay/PHASE-CLOSURE-LR-2C-SB01-2026-09-17.md`.
+Next Allowed Action: Hermes releases LR-2E (entitlement + PS01/LK01 multi-product isolation) on the exact current revision. LR-2D closure report: `docs/relay/PHASE-CLOSURE-LR-2D-SB01-2026-09-17.md`.
+
+## LR-2D CLOSURE (2026-09-17)
+
+- Dispatched to `agent-qwen` → readiness PASS but substantive run **exit 55** (Windows ConPTY
+  `AttachConsole` class). Codex classification returned `ROUTE: SEND_TO_CLAUDE`; Claude round 1
+  ended in `DIRECT_EXECUTOR_TIMEOUT`; a bounded resume round completed the deliverables.
+- Real source defect fixed (`0f85b6e2`): a duplicate/stale event after a completed reconcile
+  resurrected the outbox job to `pending`, re-processing settled state and violating
+  `runtime_outbox_jobs_completion_check`. `completed` is now preserved like `dead_letter`.
+- Gates: build 0 / typecheck 0 / runtime **58/58** / profile-registry **16/16** / `git diff --check`
+  clean. Real Stripe TEST + LAB slice: **32/32 PASS, exit 0**, real `stripe listen` deliveries all
+  **HTTP 200**.
+- Independent verification: `agent-codex` FINAL-AUDITOR at `c59fc85d`, **`VERDICT: PASS`** —
+  `docs/platform/billing-core/CODE-2-QA-REPORT-SB01-LR-2D-CODEX-2026-09-17.md`.
+- Non-blocking Decision Gap recorded (not silently changed): mapped events that cannot derive a
+  `providerObjectId` (e.g. `payment_method.attached`) are durably claimed and enqueue a
+  reconcile job that fails fail-closed with `REQUEST_FIELD_REQUIRED` — no state mutation, but it
+  consumes queue capacity.
 
 ## LR-2C CLOSURE (2026-09-17)
 
