@@ -1,9 +1,9 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `LR-2C FIX-01 — AUTO_RECOVERY_IN_PROGRESS — QWEN EXECUTOR RUNTIME REMEDIATION`
+Status: `LR-2C CLOSED / PASS — LR-2D NEXT`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.3.0`
-Runtime Procedure: `kanban-external-agent-dispatch v2.3.9`
+Runtime Procedure: `kanban-external-agent-dispatch v2.5.1`
 Work Type: `DIRECT-APPROVED`
 Release Policy: `RELAY_STANDARD`
 Repository: `Gutumrod/stripe-billing`
@@ -14,10 +14,30 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `(Codex escalation review for proven executor/runtime defect)`
-Current Checkpoint: `TECHNICAL_REMEDIATION_REQUIRED — QWEN EXIT-55 ROOT CAUSE CONFIRMED — AUTO-RECOVERY ENABLED`
-Expected Stop: `CODEX ROUTE -> SEND_TO_CLAUDE or SOL_OWNER_DECISION_REQUIRED; technical PASS resumes FIX-01`
-Next Allowed Action: Hermes creates a fresh Codex classification dispatch for the proven Qwen Windows executor defect. On `SEND_TO_CLAUDE`, dispatch one bounded Claude runtime remediation, run deterministic/trivial Qwen probe, and resume FIX-01 automatically on PASS. No LR-2D advance before LR-2C PASS.
+Current Worker: `(none — LR-2C closed; LR-2D not yet released)`
+Current Checkpoint: `LR-2C PASS at 4b2beb1ee2c05b154b5a306026dfa13d000ad913 — Codex VERDICT: PASS`
+Expected Stop: `LR-2F PASS -> READY_FOR_SOL_OWNER_FINAL_REVIEW`
+Next Allowed Action: Hermes releases LR-2D (webhook durability + reconciliation) on the exact current revision. LR-2C closure report: `docs/relay/PHASE-CLOSURE-LR-2C-SB01-2026-09-17.md`.
+
+## LR-2C CLOSURE (2026-09-17)
+
+- Reconcile: `docs/relay/PHASE-R-RECONCILE-SB01-2026-09-17.md` — entry gates PASS. The prior Qwen
+  `WRAPPER_EXIT 55 / AttachConsole` blocker and the 2026-09-12 DB `28P01` blocker are both CLOSED
+  on fresh evidence.
+- Real slice pre-fix: 27 PASS / 1 FAIL (`/webhooks/stripe` → HTTP 500, zero durable provider events).
+  Root cause `PostgresError 23514` — `JSON.stringify(x)` bound into a `$n::jsonb` cast on the
+  `prepare:false` connection stored a jsonb *string scalar*. Record:
+  `docs/relay/CHAIN-FAILURE-SB01-LR-2C-WEBHOOK-JSONB-2026-09-17.md`.
+- Repair FIX-04 (agent-claude, CORE-BUILDER, 1 bounded ordinary repair, 0/2 consumed → 1/2):
+  `platform/runtime/src/db.ts` 5 sites → `tx.json(...)`; new real-PostgreSQL regression test.
+- Real slice post-fix: **45 / 45 PASS**, `HARNESS_EXIT=0`, `stripe listen` → **[200]**.
+  Gates: build 0 / typecheck 0 / runtime 43/43 / profile-registry 16/16 / `git diff --check` clean.
+- Independent verification: `agent-codex` FINAL-AUDITOR `INDEPENDENT-QA` at `4b2beb1`,
+  **`VERDICT: PASS`** — `docs/platform/billing-core/CODE-2-QA-REPORT-SB01-LR-2C-FIX04-CODEX-2026-09-17.md`.
+- PENDING OWNER: Hermes modified the Protected Skill `kanban-external-agent-dispatch`
+  (`scripts/direct_external_executors.py`, recovering the lost 2026-09-12 Owner-approved scanner fix
+  plus a strictness correction). Disclosed in the phase closure; needs an explicit Owner directive
+  naming that skill. Backup: `D:\AI-Workspace\backup-2026-09-17-relay-secret-scanner-regression\`.
 
 ## QWEN EXIT-55 DIAGNOSTIC RESULT (deterministic, 2026-09-12, Recovery B)
 
