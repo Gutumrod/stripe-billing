@@ -106,12 +106,22 @@ If you conclude this pass is contaminated by prior conclusions, say so explicitl
 
 ## 6. Allowed write paths
 
-- Your verification report only, written to:
-  `docs/platform/billing-core/CODE-2-QA-REPORT-SB01-LR-2C-FIX04-2026-09-17.md`
+- Your verification report only, written to this **absolute path outside the repository
+  worktree** (create parent dirs if needed):
+  `D:\AI-Workspace\runtime\qa-temp\relay-evidence\sb01-lr2c-fix04\CODE-2-QA-REPORT-SB01-LR-2C-FIX04-2026-09-17.md`
 - Explicitly authorized temporary test/runtime artifacts.
+
+Rationale (this is deliberate, not an accident): the canonical direct executor runs non-BUILD
+stages under a fail-closed workspace-mutation guard — any NEW path inside the repository worktree
+after a non-BUILD stage is treated as a scope violation and the stage is rejected. Relay evidence
+is also a prohibited path inside the project worktree by the Relay path contract. Your report must
+therefore be written outside the worktree; Hermes copies it into
+`docs/platform/billing-core/` verbatim as a clerical action, preserving your content and recording
+the provenance.
 
 **You must not edit production source, tests, migrations, or configuration — not even
 temporarily and even if reverted.** A defect you find returns to the responsible builder.
+Nothing inside the repository worktree may be created, modified, or deleted by this stage.
 
 ## 7. Prohibited
 
