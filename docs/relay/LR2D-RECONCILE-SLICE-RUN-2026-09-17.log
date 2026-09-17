@@ -1,0 +1,79 @@
+=== SB01 LR-2D REAL WEBHOOK DURABILITY + RECONCILIATION VERTICAL SLICE ===
+run tag: 0d143b95
+stripe key: PRESENT prefix=sk_test_… len=107 (sk_test_ gate passed)
+webhook secret: PRESENT prefix=whsec_… len=70
+db url: PRESENT host=aws-1-ap-southeast-1.pooler.supabase.com:5432
+[PASS] WSTERA LAB billing_core_staging reachable (select 1)
+{"level":"info","event":"billing.runtime.initialized","environment":"test","schema":"billing_core_staging","admissionTestMode":true,"credentialCount":1}
+[PASS] runtime.initialize() PASS (db ping + credential bindings against WSTERA LAB)
+pre-existing outbox jobs drained: 0
+Core HTTP boundary listening on http://127.0.0.1:8787 (stripe listen forwards /webhooks/stripe here)
+--- Phase 1: real PS01 Test checkout via Core HTTP boundary (customer mapping setup) ---
+[PASS] real PS01 Test checkout via Core HTTP boundary returned 201 :: status=201 code=
+[PASS] WSTERA LAB runtime_provider_customers row ready with real provider mapping :: customer=cus_VHEpJJw2…KZOR state=ready
+--- Phase 2: fixture-route setup (harness-side Stripe TEST API, see §4) ---
+[PASS] Test payment method attached to real customer (harness setup) :: pm=pm_1UGgMDHB4…NqQi
+--- Phase 3: real Stripe Test subscription creation (pinned price+metadata, mapped) ---
+[PASS] real Stripe Test subscription created (sub_…, mapped customer, pinned price) :: subscription=sub_1UGgMEHB…zAKH status=active
+[PASS] real customer.subscription.created event durably claimed via live stripe listen → Core webhook route :: event=evt_1UGgMGHB…C4LE status=pending
+[PASS] mapped webhook claim enqueued a reconcile outbox job (pending, pre-processing) :: status=pending
+reconcile-phase job drain outcomes: ["failed","completed","completed"]
+[PASS] reconcile job for the real customer.subscription.created event completed against provider truth :: status=completed
+[PASS] reconciliation_state matches real Stripe subscription (price/product/amount/currency) :: price=price_1UDCxy…WZ1c amount=99000 currency=THB version=1 status=active
+[PASS] §3 item 7: entitlement delivered to test sink, version 1, grant, correct keys :: type=grant version=1 keys=["commercial_access"]
+--- Phase 4: duplicate delivery replay (raw-body-faithful, real whsec_) ---
+[PASS] raw webhook body captured for the real delivered event (duplicate-replay source) :: captured=true
+[PASS] reconcile outbox job reached completed status before duplicate replay :: status=completed completed_at=true
+[PASS] duplicate delivery accepted 200 and flagged duplicate=true (real whsec_ signature) :: status=200 duplicate=true
+[PASS] duplicate delivery created no second provider-event row :: rows=1
+[PASS] duplicate delivery created no second outbox job (same dedupe key) :: rows=1
+[PASS] §3 item 6: completed job NOT resurrected to pending by duplicate/stale conflict (real execution, 0f85b6e2 fix) :: status=completed
+[PASS] duplicate delivery produced no second entitlement transition/sink version :: version=1
+[PASS] exactly one entitlement transition row exists after duplicate replay :: rows=1
+--- Phase 5: provider-truth mismatch (foreign price, real Stripe object) ---
+[PASS] real Stripe Test subscription #2 created (foreign price, real object) :: subscription=sub_1UGgMKHB…86b6
+[PASS] mismatch-fixture event durably claimed (mapped, before processing) :: event=evt_1UGgMNHB…FJOd
+mismatch-phase job drain outcomes: ["failed","failed","failed"]
+[PASS] §3 item 4: reconcile job on provider-truth mismatch does NOT complete :: status=failed
+[PASS] rejected with RECONCILE_PRICE_MISMATCH (real Stripe price truth vs. pinned profile) :: code=RECONCILE_PRICE_MISMATCH
+[PASS] mismatch left no billing-state mutation (no reconciliation_state row) :: row=absent
+[PASS] mismatch did not disturb the existing entitlement sink version :: version=1
+--- Phase 6: unmapped webhook intake via stripe fixture trigger (durable, side-effect-free) ---
+stripe trigger customer.subscription.updated: ok
+[PASS] unmapped fixture event durably claimed with status=skipped :: status=skipped
+[PASS] unmapped event enqueued no reconcile outbox job :: rows=0
+--- Phase 7: real subscription cancellation → revoke transition, monotonic version ---
+[PASS] real Stripe Test subscription canceled (harness lifecycle action) :: status=canceled
+[PASS] real customer.subscription.deleted event durably claimed :: event=evt_1UGgMWHB…rvC1
+cancellation-phase job drain outcomes: ["failed","failed","failed","completed","completed"]
+[PASS] cancellation reconcile job completed against real provider truth :: status=completed
+[PASS] reconciliation_state reflects real canceled status, version incremented :: status=canceled version=2
+[PASS] entitlement sink shows revoke transition with monotonically increasing version (2 > 1) :: type=revoke version=2 keys=[]
+=== SUMMARY ===
+{
+  "run_tag": "0d143b95",
+  "total_checks": 32,
+  "passed": 32,
+  "failed": 0,
+  "account_id": "acc_ps01_lr2d_0d143b95",
+  "provider_customer": "cus_VHEpJJw2…KZOR",
+  "subscriptions": [
+    "sub_1UGgMEHB…zAKH",
+    "sub_1UGgMKHB…86b6"
+  ]
+}
+--- cleanup: Stripe Test objects + scoped WSTERA LAB rows ---
+stripe subscription deleted: sub_1UGgMEHB…zAKH status=undefined
+stripe subscription deleted: sub_1UGgMKHB…86b6 status=canceled
+stripe customer deleted: cus_VHEpJJw2…KZOR deleted=true
+db cleanup runtime_entitlement_test_sink: 1 row(s) deleted
+db cleanup runtime_entitlement_transitions: 2 row(s) deleted
+db cleanup runtime_outbox_jobs: 8 row(s) deleted
+db cleanup runtime_provider_events: 6 row(s) deleted
+db cleanup runtime_reconciliation_state: 1 row(s) deleted
+db cleanup runtime_audit_events: 19 row(s) deleted
+db cleanup runtime_provider_customers: 1 row(s) deleted
+db cleanup runtime_operations: 1 row(s) deleted
+db cleanup runtime_credential_bindings: 1 row(s) deleted
+SCOPED CLEANUP COUNTS: {"subscriptions_deleted":2,"customers_deleted":1,"db_rows_deleted":40}
+FINAL CLEANUP COUNTS: {"subscriptions_deleted":2,"customers_deleted":1,"db_rows_deleted":40}
