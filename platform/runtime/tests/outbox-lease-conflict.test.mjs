@@ -38,7 +38,14 @@ test('failed job is reset to pending on duplicate conflict (unchanged pre-existi
   assert.deepEqual(result, { status: 'pending', preserveLease: false });
 });
 
-test('completed job is reset to pending on duplicate conflict (unchanged pre-existing behavior)', () => {
+// LR-2D real-execution defect fix (2026-09-17): a duplicate/stale event re-arriving after its
+// job already completed must not resurrect it to pending — see
+// docs/platform/billing-core/EVIDENCE-SB01-LR-2D-CLAUDE-2026-09-17.md. Real execution against
+// live Postgres proved the prior "reset to pending" behavior violated
+// runtime_outbox_jobs_completion_check the moment the resurrected row was completed/failed
+// again (completed_at stays stamped from the first completion while status flips away from
+// 'completed'). `completed` is now preserved exactly like `dead_letter`.
+test('completed job is preserved on duplicate conflict (repaired: previously reset to pending, which corrupted completed_at)', () => {
   const result = resolveOutboxConflict({ status: 'completed', leaseExpiresAt: null }, NOW);
-  assert.deepEqual(result, { status: 'pending', preserveLease: false });
+  assert.deepEqual(result, { status: 'completed', preserveLease: true });
 });

@@ -20,7 +20,10 @@ test('shared conflict SET clause qualifies every existing-row RHS read via exist
   // target alias. If a future edit strips the qualifier, this fails.
   assert.doesNotMatch(OUTBOX_LEASE_PRESERVING_CONFLICT_SET, /when\s+status=/);
   assert.doesNotMatch(OUTBOX_LEASE_PRESERVING_CONFLICT_SET, /(?<!existing_job\.)lease_expires_at\s*>\s*now\(\)/);
-  assert.match(OUTBOX_LEASE_PRESERVING_CONFLICT_SET, /when existing_job\.status='dead_letter' then 'dead_letter'/);
+  assert.match(
+    OUTBOX_LEASE_PRESERVING_CONFLICT_SET,
+    /when existing_job\.status in \('dead_letter','completed'\) then existing_job\.status/,
+  );
   assert.match(
     OUTBOX_LEASE_PRESERVING_CONFLICT_SET,
     /when existing_job\.status='processing' and existing_job\.lease_expires_at > now\(\) then 'processing'/,

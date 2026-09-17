@@ -4,8 +4,14 @@ import { BillingEnvironment, BillingRuntimeError, CredentialBinding, SignedEntit
 type JsonRecord = Record<string, postgres.JSONValue>;
 
 // Shared by claimWebhookEvent and enqueueReconciliation: on a duplicate dedupe_key, keep an
-// unexpired `processing` lease intact (don't hand the same job to a second worker) and keep
-// `dead_letter` fail-closed. Decision table mirrored by resolveOutboxConflict for testing.
+// unexpired `processing` lease intact (don't hand the same job to a second worker), keep
+// `dead_letter` fail-closed, and — LR-2D real-execution defect fix, see
+// docs/platform/billing-core/EVIDENCE-SB01-LR-2D-CLAUDE-2026-09-17.md — keep `completed` intact
+// too. A duplicate/stale event re-arriving after its job already completed must not resurrect
+// it to `pending`: that both re-processes already-settled billing state and, since `completed`
+// rows always carry a non-null `completed_at`, violates `runtime_outbox_jobs_completion_check`
+// (status<>'completed' requires completed_at IS NULL) the instant a second worker later
+// completes/fails it again. Decision table mirrored by resolveOutboxConflict for testing.
 //
 // Both affected INSERTs alias the conflict target as `existing_job` (`insert into ... as
 // existing_job`). Existing-row RHS reads must go through that alias: inside `on conflict do
@@ -15,22 +21,22 @@ type JsonRecord = Record<string, postgres.JSONValue>;
 // assignment target there.
 export const OUTBOX_LEASE_PRESERVING_CONFLICT_SET = `
   status=case
-    when existing_job.status='dead_letter' then 'dead_letter'
+    when existing_job.status in ('dead_letter','completed') then existing_job.status
     when existing_job.status='processing' and existing_job.lease_expires_at > now() then 'processing'
     else 'pending'
   end,
   next_attempt_at=case
-    when existing_job.status='dead_letter' then existing_job.next_attempt_at
+    when existing_job.status in ('dead_letter','completed') then existing_job.next_attempt_at
     when existing_job.status='processing' and existing_job.lease_expires_at > now() then existing_job.next_attempt_at
     else now()
   end,
   lease_owner=case
-    when existing_job.status='dead_letter' then existing_job.lease_owner
+    when existing_job.status in ('dead_letter','completed') then existing_job.lease_owner
     when existing_job.status='processing' and existing_job.lease_expires_at > now() then existing_job.lease_owner
     else null
   end,
   lease_expires_at=case
-    when existing_job.status='dead_letter' then existing_job.lease_expires_at
+    when existing_job.status in ('dead_letter','completed') then existing_job.lease_expires_at
     when existing_job.status='processing' and existing_job.lease_expires_at > now() then existing_job.lease_expires_at
     else null
   end,
@@ -45,10 +51,12 @@ export interface OutboxConflictRow {
 // Pure mirror of OUTBOX_LEASE_PRESERVING_CONFLICT_SET's branches, kept in sync by hand; used by
 // tests/outbox-lease-conflict.test.mjs since the SQL itself needs a live database to execute.
 export function resolveOutboxConflict(current: OutboxConflictRow, now: Date): {
-  status: 'dead_letter' | 'processing' | 'pending';
+  status: 'dead_letter' | 'completed' | 'processing' | 'pending';
   preserveLease: boolean;
 } {
-  if (current.status === 'dead_letter') return { status: 'dead_letter', preserveLease: true };
+  if (current.status === 'dead_letter' || current.status === 'completed') {
+    return { status: current.status, preserveLease: true };
+  }
   const leaseActive = current.status === 'processing'
     && current.leaseExpiresAt !== null
     && current.leaseExpiresAt.getTime() > now.getTime();
