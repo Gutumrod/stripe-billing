@@ -1,6 +1,6 @@
 # TASK — SB01-LONG-RUN-2C-2F-001
 
-Status: `LR-2D CLOSED / PASS — LR-2E NEXT`
+Status: `LR-2E CLOSED / PASS — LR-2F NEXT (hard stop at completion)`
 Workflow ID: `WF-RELAY-01`
 Workflow Spec Version: `1.3.0`
 Runtime Procedure: `kanban-external-agent-dispatch v2.5.1`
@@ -14,10 +14,30 @@ Accepted Phase 2B Material SHA: `6be6cb36af42ba2cef62a8f070f0bb8d0a5e2895`
 Owner: `Free`
 Commander / Final Verify: `Sol`
 Orchestrator: `Hermes`
-Current Worker: `(none — LR-2D closed; LR-2E not yet released)`
-Current Checkpoint: `LR-2D PASS at c59fc85d3f996d571ebed68c27f4dad7ac9f9be1 — Codex VERDICT: PASS`
+Current Worker: `(none — LR-2E closed; LR-2F not yet released)`
+Current Checkpoint: `LR-2E PASS at cd7363cf661e69e19e4ee207824cd354110e1180 — Codex VERDICT: PASS`
 Expected Stop: `LR-2F PASS -> READY_FOR_SOL_OWNER_FINAL_REVIEW`
-Next Allowed Action: Hermes releases LR-2E (entitlement + PS01/LK01 multi-product isolation) on the exact current revision. LR-2D closure report: `docs/relay/PHASE-CLOSURE-LR-2D-SB01-2026-09-17.md`.
+Next Allowed Action: Hermes releases LR-2F (Control Plane read projection) on the exact current revision. LR-2F is the final stage and a HARD STOP for production activation on completion. LR-2E closure report: `docs/relay/PHASE-CLOSURE-LR-2E-SB01-2026-09-18.md`.
+
+## LR-2E CLOSURE (2026-09-18)
+
+- Took two bounded ordinary repairs (budget 2/2, no escalation). Fingerprints B (harness scope
+  defect) and C (cross-file outbox lease race) closed by repair 1; A
+  (`EXECUTOR-CLAUDE-OUTPUT-INCOMPLETE` — builder self-delegated to a background subagent and the CLI
+  killed it at its 600 s ceiling) closed by repair 2.
+- Before this, LR-2E was held on an account-wide Claude session limit; resumed on schedule.
+- **No `platform/runtime/src/**` change** — test + harness + evidence only.
+- Gates: build 0 / typecheck 0 / runtime **67/67** (was 58) / profile-registry **16/16** /
+  `git diff --check` clean. Real isolation slice: **40/40 PASS, exit 0**.
+- Isolation proven with the **identical `account_id` literal** across PS01 and LK01: distinct real
+  Stripe customers, provider events, outbox `dedupe_key`, `reconciliation_state`, and two
+  independent entitlement sink rows. PS01-signed assertion vs LK01 credential → 401
+  `ACCOUNT_ASSERTION_INVALID` (fail-closed). Duplicate PS01 replay idempotent and leaves LK01
+  untouched. PS01 cancel → revoke v2 monotonic; LK01 still grant v1.
+- Residual gap **CLOSED**: entitlement-path JSONB now has real-PostgreSQL tests asserting persisted
+  `jsonb_typeof` (array / object).
+- Independent verification: `agent-codex` FINAL-AUDITOR at `cd7363c`, **`VERDICT: PASS`**, no
+  blocking findings — `docs/platform/billing-core/CODE-2-QA-REPORT-SB01-LR-2E-CODEX-2026-09-18.md`.
 
 ## LR-2D CLOSURE (2026-09-17)
 
