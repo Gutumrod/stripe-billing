@@ -2,11 +2,19 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { BillingDb } from '../dist/db.js';
+import { signEntitlementTransition } from '../dist/security.js';
 import {
   databaseUrl, requireDatabaseUrl, SCHEMA, PRODUCT_ID, makeVerify,
   deleteOutboxByCorrelation, deleteByAccount, BASE_SNAPSHOT, makeRegisteredRegistry,
   makeRuntime, seedReconcileJob, ensureCustomerMapping, sweepStaleLr2dFixtures, providerCustomerIdFor,
 } from './helpers/lr2d-real-db-fixtures.mjs';
+import {
+  PRODUCT_PS01, PRODUCT_LK01, BASE_SNAPSHOT_PS01, BASE_SNAPSHOT_LK01,
+  makeRegisteredRegistry as makeLr2eRegistry, makeProductRuntime as makeLr2eRuntime,
+  ensureCustomerMapping as ensureLr2eCustomerMapping, seedReconcileJobFor,
+  seedEntitlementDeliveryJobFor, sweepStaleLr2eFixtures, providerCustomerIdFor as providerCustomerIdForLr2e,
+  ENTITLEMENT_KEY_PS01,
+} from './helpers/lr2e-multiproduct-fixtures.mjs';
 
 // SB01 LR-2D — real-PostgreSQL execution proofs for outbox durability, lease/concurrency safety,
 // and provider-truth reconciliation rejection (dispatch §2 items 3, 4, 5, and 6). Prior LR-2C
@@ -30,6 +38,15 @@ requireDatabaseUrl('the LR-2D real-Postgres outbox/reconcile tests');
 const ACCOUNT = `lr2d_${crypto.randomUUID().slice(0, 8)}_acc`;
 const ACCOUNT_WEBHOOK = `lr2d_crash_wh_${crypto.randomUUID().slice(0, 8)}_acc`;
 const ACCOUNT_ENTITLEMENT = `lr2d_crash_ent_${crypto.randomUUID().slice(0, 8)}_acc`;
+
+// SB01 LR-2E additions (appended below, after all existing LR-2D tests) reuse this file's
+// existing "everything that leases from the shared outbox queue lives in one sequential file"
+// protection rather than re-deriving it — see the comment immediately below. Account ids use a
+// prefix distinct from both 'lr2d_' and the separate sb01-lr2e-isolation-real-db.test.mjs file's
+// 'lr2eiso_' prefix so no sweep in any file can ever delete another file's fixture rows.
+const LR2E_ACCOUNT_PREFIX = 'lr2equeue_';
+const ACCOUNT_LR2E_GRANT_REVOKE = `${LR2E_ACCOUNT_PREFIX}grant_revoke_${crypto.randomUUID().slice(0, 8)}_acc`;
+const ACCOUNT_LR2E_SCOPE_MISMATCH = `${LR2E_ACCOUNT_PREFIX}scope_mismatch_${crypto.randomUUID().slice(0, 8)}_acc`;
 
 // The crash-window recovery tests (§2 item 7, bottom of this file) share this file rather than
 // a separate one deliberately: `node --test` runs multiple test *files* concurrently by
@@ -59,6 +76,30 @@ after(async () => {
   const verify = makeVerify();
   try {
     await deleteByAccount(verify, 'runtime_provider_customers', [ACCOUNT, ACCOUNT_WEBHOOK, ACCOUNT_ENTITLEMENT]);
+  } finally {
+    await verify.end({ timeout: 5 });
+  }
+});
+
+before(async () => {
+  const verify = makeVerify();
+  try {
+    await sweepStaleLr2eFixtures(verify, LR2E_ACCOUNT_PREFIX);
+  } finally {
+    await verify.end({ timeout: 5 });
+  }
+});
+
+after(async () => {
+  const verify = makeVerify();
+  const accounts = [ACCOUNT_LR2E_GRANT_REVOKE, ACCOUNT_LR2E_SCOPE_MISMATCH];
+  try {
+    for (const table of [
+      'runtime_entitlement_test_sink', 'runtime_entitlement_transitions', 'runtime_outbox_jobs',
+      'runtime_reconciliation_state', 'runtime_audit_events', 'runtime_provider_customers',
+    ]) {
+      await deleteByAccount(verify, table, accounts);
+    }
   } finally {
     await verify.end({ timeout: 5 });
   }
@@ -678,5 +719,130 @@ test('LR-2D crash-window: entitlement transition is durable before sink delivery
     await deleteByAccount(verify, 'runtime_reconciliation_state', [ACCOUNT_ENTITLEMENT]);
     await deleteByAccount(verify, 'runtime_audit_events', [ACCOUNT_ENTITLEMENT]);
     await verify.end({ timeout: 5 });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// SB01 LR-2E additions (appended, not interleaved, per this file's own top-of-file convention —
+// see the LR2E_ACCOUNT_PREFIX comment above). These cover the two outbox/lease-scoped LR-2E
+// objectives that tests/sb01-lr2e-isolation-real-db.test.mjs deliberately does not own, because it
+// never leases from the shared queue: per-product grant/revoke monotonicity through the REAL
+// outbox queue (processOneJob, not a hand-called db method), and cross-product job-scope
+// rejection of ENTITLEMENT_JOB_SCOPE_MISMATCH via a real leased outbox row.
+// ---------------------------------------------------------------------------
+test('LR-2E outbox: per-product grant then revoke reaches the entitlement sink through the real leased queue, independently for PS01 and LK01 (real Postgres)', async () => {
+  const db = new BillingDb(databaseUrl, SCHEMA);
+  const verify = makeVerify();
+  const ps01SubId = `sub_${LR2E_ACCOUNT_PREFIX}ps01_gr`;
+  const lk01SubId = `sub_${LR2E_ACCOUNT_PREFIX}lk01_gr`;
+  try {
+    const registry = await makeLr2eRegistry();
+    await ensureLr2eCustomerMapping(db, PRODUCT_PS01, ACCOUNT_LR2E_GRANT_REVOKE, providerCustomerIdForLr2e('ps01', ACCOUNT_LR2E_GRANT_REVOKE));
+    await ensureLr2eCustomerMapping(db, PRODUCT_LK01, ACCOUNT_LR2E_GRANT_REVOKE, providerCustomerIdForLr2e('lk01', ACCOUNT_LR2E_GRANT_REVOKE));
+
+    // PS01: grant via a real leased reconcile job, then drain its delivery job.
+    const ps01GrantRuntime = makeLr2eRuntime(BASE_SNAPSHOT_PS01(ACCOUNT_LR2E_GRANT_REVOKE), registry);
+    await seedReconcileJobFor(verify, PRODUCT_PS01, ACCOUNT_LR2E_GRANT_REVOKE, ps01SubId, 'lr2e-queue-ps01-grant');
+    assert.equal(await ps01GrantRuntime.processOneJob('lr2e_gr_ps01_reconcile'), 'completed');
+    assert.equal(await ps01GrantRuntime.processOneJob('lr2e_gr_ps01_delivery'), 'completed');
+
+    // LK01: grant via its own real leased reconcile job, same shared account_id, own subscription id.
+    const lk01GrantRuntime = makeLr2eRuntime(BASE_SNAPSHOT_LK01(ACCOUNT_LR2E_GRANT_REVOKE), registry);
+    await seedReconcileJobFor(verify, PRODUCT_LK01, ACCOUNT_LR2E_GRANT_REVOKE, lk01SubId, 'lr2e-queue-lk01-grant');
+    assert.equal(await lk01GrantRuntime.processOneJob('lr2e_gr_lk01_reconcile'), 'completed');
+    assert.equal(await lk01GrantRuntime.processOneJob('lr2e_gr_lk01_delivery'), 'completed');
+
+    const afterGrants = await verify`
+      select product_id::text as product_id, plan_id, transition_type::text as transition_type,
+             entitlement_keys, latest_transition_version::int as version
+      from ${verify(`${SCHEMA}.runtime_entitlement_test_sink`)} where account_id = ${ACCOUNT_LR2E_GRANT_REVOKE}
+      order by product_id
+    `;
+    assert.equal(afterGrants.length, 2, 'both products landed an independent grant in the real sink');
+    const ps01Grant = afterGrants.find((r) => r.product_id === PRODUCT_PS01);
+    const lk01Grant = afterGrants.find((r) => r.product_id === PRODUCT_LK01);
+    assert.equal(ps01Grant.transition_type, 'grant');
+    assert.equal(ps01Grant.version, 1);
+    assert.deepEqual(ps01Grant.entitlement_keys, ['commercial_access']);
+    assert.equal(lk01Grant.transition_type, 'grant');
+    assert.equal(lk01Grant.version, 1);
+    assert.deepEqual(lk01Grant.entitlement_keys, ['links.pro']);
+
+    // Revoke PS01 only (real leased reconcile of a canceled snapshot, same subscription id ->
+    // upsertReconciliation advances the SAME row to version 2) and prove LK01 is untouched.
+    const ps01RevokeRuntime = makeLr2eRuntime({ ...BASE_SNAPSHOT_PS01(ACCOUNT_LR2E_GRANT_REVOKE), status: 'canceled' }, registry);
+    await seedReconcileJobFor(verify, PRODUCT_PS01, ACCOUNT_LR2E_GRANT_REVOKE, ps01SubId, 'lr2e-queue-ps01-revoke');
+    assert.equal(await ps01RevokeRuntime.processOneJob('lr2e_gr_ps01_revoke_reconcile'), 'completed');
+    assert.equal(await ps01RevokeRuntime.processOneJob('lr2e_gr_ps01_revoke_delivery'), 'completed');
+
+    const afterRevoke = await verify`
+      select product_id::text as product_id, transition_type::text as transition_type,
+             entitlement_keys, latest_transition_version::int as version
+      from ${verify(`${SCHEMA}.runtime_entitlement_test_sink`)} where account_id = ${ACCOUNT_LR2E_GRANT_REVOKE}
+      order by product_id
+    `;
+    const ps01Revoked = afterRevoke.find((r) => r.product_id === PRODUCT_PS01);
+    const lk01Untouched = afterRevoke.find((r) => r.product_id === PRODUCT_LK01);
+    assert.equal(ps01Revoked.transition_type, 'revoke');
+    assert.equal(ps01Revoked.version, 2, 'PS01 monotonically advanced to v2 (revoke) through the real queue');
+    assert.deepEqual(ps01Revoked.entitlement_keys, []);
+    assert.equal(lk01Untouched.transition_type, 'grant', 'LK01 sink untouched by PS01\'s revoke');
+    assert.equal(lk01Untouched.version, 1, 'LK01 version did not advance');
+  } finally {
+    await verify.end({ timeout: 5 });
+    await db.close();
+  }
+});
+
+test('LR-2E outbox: an entitlement delivery job whose outbox row claims a different product than its signed envelope fails closed as ENTITLEMENT_JOB_SCOPE_MISMATCH (real Postgres, real leased job)', async () => {
+  const db = new BillingDb(databaseUrl, SCHEMA);
+  const verify = makeVerify();
+  const providerSubscriptionId = `sub_${LR2E_ACCOUNT_PREFIX}scope_ps01`;
+  try {
+    const registry = await makeLr2eRegistry();
+    // Deliberately NOT calling db.createEntitlementTransition here: real execution showed it
+    // auto-enqueues its OWN correctly-scoped entitlement_test_sink job in the same transaction
+    // (db.ts's createEntitlementTransition), which would win the FIFO lease ahead of the
+    // deliberately mismatched job below and mask the scope check entirely. The
+    // ENTITLEMENT_JOB_SCOPE_MISMATCH guard in processEntitlementJob runs before any transition-id
+    // DB lookup (verify signature -> compare envelope.product_id/account_id to the job's own ->
+    // throw), so a synthetic transitionId is sufficient to prove it fails closed.
+    const now = Date.now();
+    const envelope = {
+      environment: 'test', product_id: PRODUCT_PS01, account_id: ACCOUNT_LR2E_SCOPE_MISMATCH,
+      profile_version: 1, plan_id: 'founding-c2', transition_type: 'grant',
+      entitlement_keys: ['commercial_access'], provider_subscription_id: providerSubscriptionId,
+      correlation_id: crypto.randomUUID(), transition_version: 1,
+      idempotency_key: `lr2e-scope-${crypto.randomUUID()}`,
+      issued_at: new Date(now).toISOString(), expires_at: new Date(now + 120_000).toISOString(),
+      signing_key_id: ENTITLEMENT_KEY_PS01.keyId,
+    };
+    const signed = await signEntitlementTransition(envelope, ENTITLEMENT_KEY_PS01);
+
+    // The signed envelope is genuinely PS01's — but the outbox row claiming to deliver it is
+    // enqueued under LK01. A real Stripe-account operator error, a compromised worker, or a
+    // programming bug could produce this; processEntitlementJob must fail closed rather than
+    // deliver PS01's entitlement under LK01's product scope.
+    const mismatchedJob = await seedEntitlementDeliveryJobFor(verify, PRODUCT_LK01, ACCOUNT_LR2E_SCOPE_MISMATCH, crypto.randomUUID(), signed);
+
+    const runtime = makeLr2eRuntime(BASE_SNAPSHOT_PS01(ACCOUNT_LR2E_SCOPE_MISMATCH), registry);
+    const outcome = await runtime.processOneJob('lr2e_scope_mismatch_worker');
+    assert.equal(outcome, 'failed', 'a cross-product job/envelope scope mismatch must not complete');
+
+    const [jobRow] = await verify`
+      select status::text as status, last_error_code
+      from ${verify(`${SCHEMA}.runtime_outbox_jobs`)} where id = ${mismatchedJob.id}::uuid
+    `;
+    assert.equal(jobRow.status, 'failed');
+    assert.equal(jobRow.last_error_code, 'ENTITLEMENT_JOB_SCOPE_MISMATCH');
+
+    const [sinkRow] = await verify`
+      select count(*)::int as n from ${verify(`${SCHEMA}.runtime_entitlement_test_sink`)}
+      where account_id = ${ACCOUNT_LR2E_SCOPE_MISMATCH}
+    `;
+    assert.equal(sinkRow.n, 0, 'no entitlement was delivered under the mismatched product scope');
+  } finally {
+    await verify.end({ timeout: 5 });
+    await db.close();
   }
 });

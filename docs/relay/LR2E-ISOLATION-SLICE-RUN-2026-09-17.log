@@ -1,0 +1,93 @@
+=== SB01 LR-2E REAL MULTI-PRODUCT (PS01 + LK01) ISOLATION VERTICAL SLICE ===
+run tag: 7fdeaace
+stripe key: PRESENT prefix=sk_test_… len=107 (sk_test_ gate passed)
+webhook secret: PRESENT prefix=whsec_… len=70
+db url: PRESENT host=aws-1-ap-southeast-1.pooler.supabase.com:5432
+shared account_id under test (both products): acc_lr2e_shared_7fdeaace
+[PASS] WSTERA LAB billing_core_staging reachable (select 1)
+{"level":"info","event":"billing.runtime.initialized","environment":"test","schema":"billing_core_staging","admissionTestMode":true,"credentialCount":2}
+[PASS] runtime.initialize() PASS (db ping + both products' credential bindings against WSTERA LAB)
+pre-existing outbox jobs drained: 0
+Core HTTP boundary listening on http://127.0.0.1:8787 (stripe listen forwards /webhooks/stripe here)
+--- Phase 1: real PS01 + LK01 Test checkout via Core HTTP boundary, shared account_id ---
+[PASS] real PS01 Test checkout via Core HTTP boundary returned 201 :: status=201 code=
+[PASS] real LK01 Test checkout via Core HTTP boundary returned 201, SAME account_id as PS01 :: status=201 code=
+[PASS] WSTERA LAB runtime_provider_customers ready for PS01 (real provider mapping) :: customer=cus_VHI0T6sq…mHJk state=ready
+[PASS] WSTERA LAB runtime_provider_customers ready for LK01 (real provider mapping, same account_id) :: customer=cus_VHI0Bbbm…fZUF state=ready
+[PASS] PS01 and LK01 got DISTINCT real Stripe customers for the identical account_id literal :: ps01=cus_VHI0T6sq…mHJk lk01=cus_VHI0Bbbm…fZUF
+--- Phase 2: fixture-route setup (harness-side Stripe TEST API, see script header) ---
+[PASS] Test payment method attached to real PS01 customer :: pm=pm_1UGjQ4HB4…qBpV
+[PASS] Test payment method attached to real LK01 customer :: pm=pm_1UGjQ5HB4…z7UT
+--- Phase 3: real Stripe Test subscription creation, one per product, shared account_id ---
+[PASS] real PS01 Stripe Test subscription created (mapped customer, pinned price) :: subscription=sub_1UGjQ6HB…GoCN status=active
+[PASS] real LK01 Stripe Test subscription created (mapped customer, pinned price, SAME account_id) :: subscription=sub_1UGjQ9HB…xtVO status=active
+[PASS] real PS01 customer.subscription.created event durably claimed via live stripe listen :: event=evt_1UGjQ9HB…Y5qi status=pending
+[PASS] real LK01 customer.subscription.created event durably claimed via live stripe listen (same account_id) :: event=evt_1UGjQBHB…ZoBu status=pending
+reconcile-phase job drain outcomes: ["failed","failed","failed","failed","failed","failed","completed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","completed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","completed","completed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","failed"]
+[PASS] PS01 reconcile job completed against real provider truth :: status=completed
+[PASS] LK01 reconcile job completed against real provider truth :: status=completed
+[PASS] PS01 and LK01 reconcile jobs used DISTINCT dedupe_key literals (real event ids, product-scoped) :: ps01=stripe:evt_1UGjQ9HB4 lk01=stripe:evt_1UGjQBHB4
+--- Phase 4: reconciliation_state + entitlement sink isolation, shared account_id ---
+[PASS] PS01 reconciliation_state matches real Stripe subscription (price/amount/currency), v1 :: amount=99000 currency=THB version=1 status=active
+[PASS] LK01 reconciliation_state matches real Stripe subscription (price/amount/currency), v1, independent of PS01 :: amount=19900 currency=THB version=1 status=active
+[PASS] exactly two independent entitlement sink rows exist for the shared account_id (one per product) :: rows=2
+[PASS] PS01 entitlement sink: grant v1, commercial_access, no cross-contamination from LK01 :: type=grant version=1 keys=["commercial_access"]
+[PASS] LK01 entitlement sink: grant v1, links.pro, no cross-contamination from PS01 :: type=grant version=1 keys=["links.pro"]
+--- Phase 5: real GET routes never leak the other product's data for the same account_id ---
+[PASS] PS01 credential reads PS01's own subscription plan via real route :: status=200 plan=founding-c2
+[PASS] PS01 route response never carries LK01's plan_id for the same account_id :: plan=founding-c2
+[PASS] LK01 credential reads LK01's own subscription plan via real route (same account_id as PS01) :: status=200 plan=pro
+[PASS] PS01 entitlements route returns only commercial_access :: keys=["commercial_access"]
+[PASS] LK01 entitlements route returns only links.pro :: keys=["links.pro"]
+{"level":"error","event":"billing.request.failed","path":"/v1/subscription/status","code":"ACCOUNT_ASSERTION_INVALID","status":401,"retryable":false}
+[PASS] a PS01-signed assertion is rejected against the LK01 credential for the SAME account_id (fail-closed, no data returned) :: status=401 error=ACCOUNT_ASSERTION_INVALID
+--- Phase 6: duplicate delivery replay (real whsec_, byte-faithful) ---
+[PASS] raw webhook body captured for the real delivered PS01 event (duplicate-replay source) :: captured=true
+[PASS] duplicate PS01 delivery accepted 200 and flagged duplicate=true :: status=200 duplicate=true
+[PASS] duplicate PS01 delivery created no second provider-event row :: rows=1
+[PASS] duplicate PS01 delivery created no second outbox job :: rows=1
+[PASS] duplicate PS01 delivery produced no second entitlement transition/sink version (still v1) :: version=1
+[PASS] duplicate PS01 delivery left LK01's sink completely untouched (still v1, grant) :: version=1 type=grant
+--- Phase 7: real cancellation of PS01 only -> revoke v2, LK01 untouched ---
+[PASS] real Stripe Test PS01 subscription canceled (harness lifecycle action) :: status=canceled
+[PASS] real PS01 customer.subscription.deleted event durably claimed :: event=evt_1UGjQZHB…Iex0
+cancellation-phase job drain outcomes: ["failed","failed","failed","failed","failed","failed","failed","failed","failed","failed","completed","completed"]
+(node:29088) TimeoutNegativeWarning: -32125.607495791144 is a negative number.
+Timeout duration was set to 1.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[PASS] PS01 cancellation reconcile job completed against real provider truth :: status=completed
+[PASS] PS01 reconciliation_state reflects real canceled status, version incremented to 2 :: status=canceled version=2
+[PASS] LK01 reconciliation_state UNCHANGED by PS01's cancellation (still active, v1) :: status=active version=1
+[PASS] PS01 entitlement sink: revoke, version 2 (monotonic grant v1 -> revoke v2), keys cleared :: type=revoke version=2 keys=[]
+[PASS] LK01 entitlement sink UNTOUCHED by PS01's revoke (still grant, v1, links.pro) — no cross-contamination :: type=grant version=1 keys=["links.pro"]
+=== SUMMARY ===
+{
+  "run_tag": "7fdeaace",
+  "total_checks": 40,
+  "passed": 40,
+  "failed": 0,
+  "shared_account_id": "acc_lr2e_shared_7fdeaace",
+  "ps01_customer": "cus_VHI0T6sq…mHJk",
+  "lk01_customer": "cus_VHI0Bbbm…fZUF",
+  "subscriptions": [
+    "sub_1UGjQ6HB…GoCN",
+    "sub_1UGjQ9HB…xtVO"
+  ]
+}
+--- cleanup: Stripe Test objects + scoped WSTERA LAB rows ---
+stripe subscription deleted: sub_1UGjQ6HB…GoCN status=undefined
+stripe subscription deleted: sub_1UGjQ9HB…xtVO status=canceled
+stripe customer deleted: cus_VHI0T6sq…mHJk deleted=true
+stripe customer deleted: cus_VHI0Bbbm…fZUF deleted=true
+db cleanup runtime_entitlement_test_sink: 2 row(s) deleted
+db cleanup runtime_entitlement_transitions: 3 row(s) deleted
+db cleanup runtime_outbox_jobs: 23 row(s) deleted
+db cleanup runtime_provider_events: 20 row(s) deleted
+db cleanup runtime_reconciliation_state: 2 row(s) deleted
+db cleanup runtime_audit_events: 93 row(s) deleted
+db cleanup runtime_provider_customers: 2 row(s) deleted
+db cleanup runtime_operations: 2 row(s) deleted
+db cleanup runtime_credential_bindings: 2 row(s) deleted
+SCOPED CLEANUP COUNTS: {"subscriptions_deleted":2,"customers_deleted":2,"db_rows_deleted":149}
+FINAL CLEANUP COUNTS: {"subscriptions_deleted":2,"customers_deleted":2,"db_rows_deleted":149}
+EXIT=0
