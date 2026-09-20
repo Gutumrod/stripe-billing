@@ -206,3 +206,24 @@ brief/manifest that:
 - does not authorize Stripe Live, PromptPay expansion, or Control payment authority by implication.
 
 Until that new brief is created and approved, SB01 remains stopped at LR-2F-A CLOSED / PASS.
+
+## Mandatory Hermes execution engine for the next combined run
+
+The next Hermes LONG_RUN that consumes this handoff must load the installed
+`hermes-native-swarm` skill before executing any work unit from the new brief.
+
+Startup gate requirements:
+
+1. locate the installed `hermes-native-swarm` skill;
+2. read its `SKILL.md` and active execution contract;
+3. verify the installed version / source identity before use;
+4. record that identity in the new run preflight evidence;
+5. use `hermes-native-swarm` as the ordinary execution engine for work units authorized by the brief;
+6. preserve the existing worker/reviewer boundaries, retry fingerprints, review gates, and escalation policy;
+7. do not silently fall back to a different execution engine if Native Swarm cannot be loaded or verified.
+
+If the Native Swarm startup gate fails, the new combined run must stop fail-closed and record the
+exact blocker instead of beginning implementation through an unapproved substitute path.
+
+This requirement does not authorize modification or reinstall of the skill. Any skill defect or
+revision requirement remains a separate revision-bound task unless the future brief explicitly authorizes it.
