@@ -1,5 +1,11 @@
 import postgres, { Sql } from 'postgres';
-import { BillingEnvironment, BillingRuntimeError, CredentialBinding, SignedEntitlementTransition } from './types';
+import {
+  BillingDependencyError,
+  BillingEnvironment,
+  BillingRuntimeError,
+  CredentialBinding,
+  SignedEntitlementTransition,
+} from './types';
 
 type JsonRecord = Record<string, postgres.JSONValue>;
 
@@ -104,6 +110,61 @@ export interface ReconciliationState {
   status: string;
 }
 
+// LR-2F-A DG-12 (STAGE-B-OWNER-RULING-AMENDMENT §3 "reachable but authoritative dependency
+// temporarily unavailable -> typed 503 retryable"; §4 C-12, which explicitly AUTHORIZES typed
+// DB/dependency error classification). Only genuine transport/availability failures of the
+// authoritative billing database are re-classified. A server-side PostgreSQL error that reports
+// our own query/schema as wrong (SQLSTATE present and not a shutdown/capacity class) stays an
+// unclassified software error, so the Control read route still returns 500 INTERNAL_ERROR for it
+// — "do not silently relabel every software error as ordinary degradation".
+//
+// Recognised as a dependency condition:
+//   * the driver's own connection codes (postgres/src/errors.js: CONNECTION_DESTROYED,
+//     CONNECT_TIMEOUT, CONNECTION_CLOSED, CONNECTION_ENDED);
+//   * Node socket-level unavailability codes (ECONNREFUSED/ECONNRESET/ETIMEDOUT/EPIPE/...);
+//   * PostgreSQL SQLSTATE class 08 (connection exception), 53 (insufficient resources, e.g.
+//     53300 too_many_connections), 57 (operator intervention, e.g. 57P01/57P03 shutdown) and
+//     58 (system error) — i.e. the server is reachable but temporarily cannot serve us.
+// A real SQLSTATE is a TWO-DIGIT class followed by a THREE-character subclass, and the subclass
+// may contain uppercase letters: 57P03 (cannot_connect_now), 57P01 (admin_shutdown) and 08P01
+// (protocol_violation) are all genuine, and they are exactly the shutdown/connection conditions
+// this classifier exists for (DG-12). The shape test must therefore accept `[0-9A-Z]` in the
+// subclass position. Anything that is not SQLSTATE-shaped (a driver/Node code, a bare word, a
+// wrong-length string) is simply not treated as a SQLSTATE, and a SQLSTATE-shaped code whose
+// two-digit class is not in the dependency set stays an unclassified software error.
+// Nothing here is echoed to the caller: the route maps this onto its own stable wire code.
+const DEPENDENCY_CONNECTION_CODES = new Set([
+  'CONNECTION_DESTROYED', 'CONNECT_TIMEOUT', 'CONNECTION_CLOSED', 'CONNECTION_ENDED',
+  'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH',
+  'ENOTFOUND', 'EAI_AGAIN', 'ERR_SOCKET_CONNECTION_TIMEOUT',
+]);
+const DEPENDENCY_SQLSTATE_CLASSES = new Set(['08', '53', '57', '58']);
+
+export function classifyDependencyFailure(operation: string, error: unknown): never {
+  const code = typeof (error as { code?: unknown } | null)?.code === 'string'
+    ? (error as { code: string }).code
+    : null;
+  // A PostgreSQL SQLSTATE is exactly 5 characters: a 2-digit class + a 3-character alphanumeric
+  // subclass (up to `[0-9A-Z]`). Class 57 alone is reachable only as `57P01`/`57P02`/`57P03`/...,
+  // and class 08 only as `08P01`/`08000`/..., so the old `/^\d{5}$/` never matched the real
+  // shutdown/connection codes at all. `[0-9A-Z]` refuses any non-SQLSTATE code (a Node/driver
+  // code such as ECONNREFUSED, a bare lowercase word, a wrong-length string), so a code that
+  // happens to contain letters can no longer be mistaken for one either.
+  const sqlStateMatch = code && /^[0-9]{2}[0-9A-Z]{3}$/.test(code) ? code.slice(0, 2) : null;
+  const isDependencyFailure =
+    (code !== null && DEPENDENCY_CONNECTION_CODES.has(code))
+    || (sqlStateMatch !== null && DEPENDENCY_SQLSTATE_CLASSES.has(sqlStateMatch));
+  if (isDependencyFailure) {
+    throw new BillingDependencyError(
+      `DATABASE_DEPENDENCY_UNAVAILABLE`,
+      `Authoritative billing database is temporarily unavailable during ${operation}`,
+      503,
+      true,
+    );
+  }
+  throw error;
+}
+
 export class BillingDb {
   private readonly sql: Sql;
   private readonly schemaPrefix: string;
@@ -123,7 +184,7 @@ export class BillingDb {
   }
 
   async ping(): Promise<void> {
-    await this.sql`select 1 as ok`;
+    await this.sql`select 1 as ok`.catch((error: unknown) => classifyDependencyFailure('ping', error));
   }
 
   async ensureCredentialBinding(binding: CredentialBinding, tokenFingerprint: string): Promise<void> {
@@ -539,7 +600,7 @@ export class BillingDb {
       from ${table}
       where environment=${environment} and product_id=${productId} and account_id=${accountId}
       order by reconciled_at desc limit 1
-    `;
+    `.catch((error: unknown) => classifyDependencyFailure('getSubscriptionState', error));
     return rows[0] ? { ...rows[0] } : null;
   }
 
@@ -550,7 +611,7 @@ export class BillingDb {
              provider_subscription_id, latest_transition_version, applied_at
       from ${table}
       where environment=${environment} and product_id=${productId} and account_id=${accountId}
-    `;
+    `.catch((error: unknown) => classifyDependencyFailure('getEntitlementProjection', error));
     return rows[0] ? { ...rows[0] } : null;
   }
 

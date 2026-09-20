@@ -11,7 +11,10 @@ import {
 } from './security';
 import { StripeTestAdapter } from './stripe';
 import {
+  BillingDependencyError,
   BillingRuntimeError,
+  ControlReadErrorCode,
+  ControlReadProjectionError,
   CredentialScope,
   EntitlementTransitionEnvelope,
   RequestAuthority,
@@ -53,6 +56,16 @@ function requireString(value: unknown, field: string): string {
   }
   return value.trim();
 }
+// Addressed read resources fail closed with a typed 404 after authorization, so a missing
+// account_id / operation_id is a not-found resource rather than a malformed body field
+// (DG-11; matches the existing GET /v1/portal not-found precedent). Distinct from the
+// runtime's unshaped `{"error":"NOT_FOUND"}` unmatched-path body.
+function requireAddressedString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new BillingRuntimeError('NOT_FOUND', `${field} is required to address this resource`, 404);
+  }
+  return value.trim();
+}
 function planForPrice(profile: Readonly<RuntimeProfile>, priceId: string): { plan: RuntimeProfile['plans'][number]; priceId: string } {
   const mapping = profile.providerMappings.stripe[profile.environment].stripePriceIds;
   const entry = Object.entries(mapping).find(([, mappedPrice]) => mappedPrice === priceId);
@@ -66,6 +79,162 @@ function transitionTypeForStatus(status: string): 'grant' | 'revoke' | 'pending'
   if (status === 'active' || status === 'trialing') return 'grant';
   if (['canceled', 'unpaid', 'incomplete_expired'].includes(status)) return 'revoke';
   return 'pending';
+}
+
+// ---------------------------------------------------------------------------------------------
+// LR-2F-A STAGE C — Control read projection (authority: STAGE-B-OWNER-RULING-AMENDMENT §3/§4,
+// DG-1/DG-2/DG-3/DG-4/DG-5/DG-6/DG-7/DG-10/DG-11/DG-12/DG-13/DG-14/DG-16).
+//
+// Route: GET /v1/billing/control/snapshot?account_id=<id>&operation_id=<id>
+//   * scope `control_read` (C-1) — a `read` credential is denied AUTH_SCOPE_DENIED
+//   * mandatory operation_id + HMAC account assertion bound to (product, environment, account,
+//     operation_id, action) (DG-9)
+//   * exactly one account per read; no product-wide aggregate and no account-enumeration
+//     array surface (DG-1/DG-16)
+//   * caller-supplied query/header authority other than the assertion -> 400 (CALLER_AUTHORITY_OVERRIDE)
+//   * no body, no mutation, no provider call
+// The v1 body carries exactly these top-level keys, in this order:
+//   schemaVersion, productId, environment, accountId, observedAt, readiness, freshness,
+//   subscription, paymentDataState, payments, warnings, correlation_id
+//
+// Typed failures (DG-11/DG-12; see controlReadError/controlReadNotFound below). Their wire body is
+// this route's own error envelope `{ error, message, retryable }`, projected at this route's
+// boundary only — the shared catch-all envelope stays exactly `{ error, message }`
+// (STAGE-B-READ-CONTRACT.md:570; `retryable` is carried on the error object and logged, never
+// returned to the caller of a pre-existing route):
+//   CONTROL_READ_RESOURCE_NOT_FOUND  404 — authenticated, but no authoritative row exists:
+//                                          runtime_reconciliation_state AND
+//                                          runtime_entitlement_test_sink both empty for the
+//                                          addressed account. Never 200 with a null projection.
+//   CONTROL_READ_UNKNOWN_PRODUCT     404 — credential product has no resolvable profile.
+//   CONTROL_READ_DEPENDENCY_DEGRADED 503 — retryable: authoritative billing DB temporarily
+//                                          unavailable. Distinguishable by code from both of the
+//                                          above and from a generic internal error.
+//   INTERNAL_ERROR                   500 — genuinely unexpected software error, still the untyped
+//                                          default. Deliberately not a typed Control read code.
+// ---------------------------------------------------------------------------------------------
+const CONTROL_READ_ROUTE = '/v1/billing/control/snapshot';
+const CONTROL_READ_ACTION = 'control_billing_snapshot_read';
+// DG-2: mandatory SB01-native integer literal, validated by construction (no coercion path).
+const CONTROL_READ_SCHEMA_VERSION = 1;
+// DG-6: domain separator for the opaque subscription reference derivation.
+const CONTROL_READ_REF_DOMAIN = 'wstera-control-subscription-ref-v1';
+// DG-3: readiness is projection-level. A 200 read means SB01 authoritatively served this
+// account's projection, so state is `ready` (closed set: waiting_for_billing_core | ready |
+// degraded) and reason is a non-empty operator string. `waiting_for_billing_core` is not
+// hard-coded while the read path works.
+const CONTROL_READ_READINESS_REASON =
+  'Authoritative SB01 billing reconciliation is readable for this account; payment actions remain disabled.';
+// DG-13: explicit typed absence — `payments: []` alone would conflate "no payments" with
+// "SB01 holds no authoritative payment projection at all".
+const CONTROL_READ_PAYMENT_WARNING =
+  'payment_projection_not_available: SB01 holds no authoritative payment source at schemaVersion 1; '
+  + 'payments is an empty collection and paymentDataState is not_available.';
+
+// LR-2F-A DG-11/DG-12 (C-10/C-11/C-12) — route-scoped classification of the two TYPED failures the
+// Control read must report, and the ONLY place either may be produced inside this route. Both
+// statuses are fixed here (404 / 503) and are never derived from an upstream value, so a failure
+// cannot smuggle a provider- or dependency-supplied status onto the wire.
+//
+// It is deliberately NOT a general error mapper:
+//   * an already-classified `BillingRuntimeError` (auth 401/403, assertion 401/403, scope 403,
+//     caller-authority 400, credential/env mismatch) is re-thrown untouched;
+//   * a `ControlReadProjectionError` is re-thrown untouched (idempotent);
+//   * `UNKNOWN_PRODUCT` (re-coded in security.ts:resolveProfile from the registry's bare
+//     ProfileResolutionError) becomes CONTROL_READ_UNKNOWN_PRODUCT with its own code and status;
+//   * an explicitly typed dependency failure becomes CONTROL_READ_DEPENDENCY_DEGRADED, 503 and
+//     retryable — reachable-but-degraded, never reported as a generic internal error (DG-12);
+//   * EVERYTHING else is returned unchanged, so a genuinely unexpected software error still
+//     reaches the handler's untyped catch as 500 INTERNAL_ERROR (DG-12: "do not silently relabel
+//     every software error as ordinary degradation").
+// DG-11/DG-12 — the wire codes this route may emit, typed so a typo cannot silently mint a new
+// code and so `INTERNAL_ERROR` can never be reached through a typed path here.
+const CONTROL_READ_RESOURCE_NOT_FOUND_CODE: ControlReadErrorCode = 'CONTROL_READ_RESOURCE_NOT_FOUND';
+const CONTROL_READ_UNKNOWN_PRODUCT_CODE: ControlReadErrorCode = 'CONTROL_READ_UNKNOWN_PRODUCT';
+const CONTROL_READ_DEPENDENCY_DEGRADED_CODE: ControlReadErrorCode = 'CONTROL_READ_DEPENDENCY_DEGRADED';
+
+function controlReadError(error: unknown): unknown {
+  if (error instanceof ControlReadProjectionError) return error;
+  if (error instanceof BillingDependencyError) {
+    return new ControlReadProjectionError(
+      CONTROL_READ_DEPENDENCY_DEGRADED_CODE,
+      'Authoritative SB01 billing dependency is temporarily unavailable; retry with backoff.',
+      503,
+      true,
+    );
+  }
+  if (error instanceof BillingRuntimeError) {
+    if (error.code === 'UNKNOWN_PRODUCT') {
+      return new ControlReadProjectionError(
+        CONTROL_READ_UNKNOWN_PRODUCT_CODE,
+        'The authenticated credential product has no resolvable billing profile.',
+        404,
+      );
+    }
+    return error;
+  }
+  // DG-11 / C-11: unknown-product classification. After the credential authenticates, the route
+  // resolves the profile through the profile registry, which signals "this credential's product
+  // has no resolvable profile" with a bare `ProfileResolutionError extends Error`
+  // (platform/profile-registry/src/registry.ts:40 'exact profile version not found',
+  // :49 'exact scoped profile not found', :50 'profile is not active'). It is NOT a
+  // BillingRuntimeError, so before this branch it reached the handler's untyped catch and surfaced
+  // as `500 INTERNAL_ERROR` purely for lack of classification — the exact collapse DG-11 forbids.
+  // Matched structurally by name rather than by importing the class, because the profile registry
+  // is an independent module (DG-8 keeps SB01's dependency direction registry-free) and the
+  // runtime already consumes it only through the injected `ProfileRegistryLike` port. Only the
+  // error's identity is used; `error.message` may name a profile status and is deliberately NOT
+  // echoed into the wire body.
+  if (error instanceof Error && error.name === 'ProfileResolutionError') {
+    return new ControlReadProjectionError(
+      CONTROL_READ_UNKNOWN_PRODUCT_CODE,
+      'The authenticated credential product has no resolvable billing profile.',
+      404,
+    );
+  }
+  return error;
+}
+
+// DG-11 — the typed not-found condition, constructed in exactly one place so the code and status
+// cannot drift apart. The message is a fixed operator string: it names no account, no product, no
+// credential and no authoritative column.
+function controlReadNotFound(): ControlReadProjectionError {
+  return new ControlReadProjectionError(
+    CONTROL_READ_RESOURCE_NOT_FOUND_CODE,
+    'No authoritative SB01 billing projection exists for the addressed account.',
+    404,
+  );
+}
+
+// Absent authority is reported as absent — never as zero, empty string or a placeholder (DG-4).
+function optionalStringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+function integerOrNull(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isInteger(value)) return value;
+  // postgres.js returns bigint columns as strings; a non-integer string is not a revision counter.
+  if (typeof value === 'string' && /^-?\d+$/.test(value.trim())) return Number(value.trim());
+  return null;
+}
+function isoTimestampOrNull(value: unknown): string | null {
+  if (value instanceof Date) return value.toISOString();
+  return optionalStringOrNull(value);
+}
+
+// DG-6: opaque, non-provider-executable reference. Deterministic for the same
+// (environment, productId, accountId, provider subscription id) and it never embeds the raw
+// provider id, so it cannot be replayed against the provider. Only hex + a fixed prefix, so a
+// Stripe-shaped `sub_...` identifier can never be a substring of the result.
+async function deriveControlSubscriptionRef(
+  environment: string,
+  productId: string,
+  accountId: string,
+  providerSubscriptionId: string,
+): Promise<string> {
+  const digest = await sha256Hex(
+    [CONTROL_READ_REF_DOMAIN, environment, productId, accountId, providerSubscriptionId].join('\u001f'),
+  );
+  return `sub_ref_${digest.slice(0, 32)}`;
 }
 
 export class CentralBillingRuntime {
@@ -156,6 +325,7 @@ export class CentralBillingRuntime {
       }
       if (request.method === 'GET' && url.pathname === '/v1/subscription/status') return await this.handleSubscriptionStatus(request, url);
       if (request.method === 'GET' && url.pathname === '/v1/entitlements') return await this.handleEntitlements(request, url);
+      if (request.method === 'GET' && url.pathname === CONTROL_READ_ROUTE) return await this.handleControlBillingSnapshot(request, url);
       if (request.method === 'POST' && url.pathname === '/v1/portal') {
         this.validateQuery(url, []);
         return await this.handlePortal(request);
@@ -179,6 +349,11 @@ export class CentralBillingRuntime {
         status: runtimeError.status,
         retryable: runtimeError.retryable,
       });
+      // Existing bounded error envelope, restored to the shape the base contract fixes at exactly
+      // `{ error, message }`: `retryable` is carried on the error object and logged, never returned
+      // to the caller (STAGE-B-READ-CONTRACT.md:570). It is therefore deliberately absent from this
+      // shared catch-all — the Control read route alone projects it, at its own boundary
+      // (see handleControlBillingSnapshot, DG-12).
       return jsonResponse({ error: runtimeError.code, message: runtimeError.message }, runtimeError.status);
     }
   }
@@ -349,6 +524,145 @@ export class CentralBillingRuntime {
       product_state_mutated: false,
       correlation_id: authority.correlationId,
     }, 200, authority.correlationId);
+  }
+
+  // LR-2F-A STAGE C — account-scoped Control read projection. Read-only: it performs no ledger
+  // write, no provider call and no mutation. Authorization is identical in shape to the existing
+  // read routes (x-wstera-* header rejection, credential env check, account-bound assertion),
+  // except that the required scope is the dedicated `control_read` (DG-10).
+  private async handleControlBillingSnapshot(request: Request, url: URL): Promise<Response> {
+    try {
+      return await this.projectControlBillingSnapshot(request, url);
+    } catch (rawError) {
+      // The one place this route converts an internal failure into the Control read wire contract;
+      // see controlReadError() for exactly what is and is not re-classified.
+      const error = controlReadError(rawError);
+      const runtimeError = error instanceof BillingRuntimeError
+        ? error
+        : new BillingRuntimeError('INTERNAL_ERROR', 'Unexpected billing runtime error', 500);
+      // Because this route now answers with its own envelope, it must also own the failure log the
+      // shared catch-all would otherwise have written: the same event and the same fields, with
+      // `retryable` included, since the base contract requires the value to be logged
+      // (STAGE-B-READ-CONTRACT.md:570,627). Logging behaviour on this route is therefore unchanged.
+      this.config.logger.error('billing.request.failed', {
+        path: url.pathname,
+        code: runtimeError.code,
+        status: runtimeError.status,
+        retryable: runtimeError.retryable,
+      });
+      // This route's boundary re-emits the runtime's error ENVELOPE (not the error itself) with
+      // DG-12's `retryable` added, because a typed degraded dependency must be actionable as data
+      // rather than prose. It is deliberately confined to this route: everything above is
+      // unchanged, the shared catch-all still returns exactly `{ error, message }` for every other
+      // route, which is what STAGE-B-READ-CONTRACT.md:570 fixes (DG-12 §3 names no wire field and
+      // cannot amend that). The status stays the typed status the envelope already carried, so
+      // 404/403/401/400 bodies are byte-identical to the pre-repair projection and only the typed
+      // degraded 503 gains the field. Nothing else is added: no stack, no internal detail, no
+      // connection string, no provider or credential value.
+      return jsonResponse(
+        {
+          error: runtimeError.code,
+          message: runtimeError.message,
+          retryable: runtimeError.retryable,
+        },
+        runtimeError.status,
+      );
+    }
+  }
+
+  private async projectControlBillingSnapshot(request: Request, url: URL): Promise<Response> {
+    // Query allowlist: exactly the two address fields. Any unlisted query parameter is a
+    // caller-asserted authority and is refused (DG-1/DG-16: no filter, no product-wide read).
+    this.validateQuery(url, ['account_id', 'operation_id']);
+    const accountId = requireAddressedString(url.searchParams.get('account_id'), 'account_id');
+    const operationId = requireAddressedString(url.searchParams.get('operation_id'), 'operation_id');
+    const authority = await this.authority(
+      request, 'control_read', CONTROL_READ_ACTION, accountId, operationId,
+    );
+    // productId and environment are BOTH credential-derived and never read from a request field
+    // or query parameter (DG-8/DG-14). resolveProfile() inside authority() cross-verifies the
+    // credential environment against the runtime and resolves the profile from the credential's
+    // own (productId, environment, profileVersion) triple, so a caller cannot select either.
+    const productId = authority.credential.productId;
+    const environment = authority.credential.environment;
+
+    const state = await this.db.getSubscriptionState(environment, productId, accountId);
+    const projection = await this.db.getEntitlementProjection(environment, productId, accountId);
+
+    // DG-11: authorization has already succeeded above. SB01 holds no account registry, so
+    // "unknown account" and "known account with no billing data" are indistinguishable at this
+    // revision; the ruling's plain reading is therefore that NO authoritative row at all means the
+    // addressed resource does not exist. Returning 200 with `subscription: null` and an all-null
+    // freshness block would present a non-existent resource as an existing one, which is exactly
+    // what DG-11 forbids. SB01's billing truth lives in these two authoritative tables —
+    // runtime_reconciliation_state and runtime_entitlement_test_sink — so EITHER row being present
+    // is an existing resource and falls through to the unchanged 200 projection below; NEITHER
+    // being present is the typed 404. Readiness and freshness cannot be served without one of
+    // them, so there is no degraded-but-present state to report at this point.
+    if (!state && !projection) throw controlReadNotFound();
+
+    // DG-5: the authoritative provider status string is passed through verbatim. No mapping into
+    // any Control status vocabulary is performed anywhere; `cancelAtPeriodEnd` stays its own
+    // boolean. DG-6: the provider subscription id is replaced by an opaque ref and is never
+    // emitted under any key. Raw provider/product identifiers and price ids are excluded.
+    let subscription: Record<string, unknown> | null = null;
+    if (state) {
+      const rawProviderSubscriptionId = optionalStringOrNull(state.provider_subscription_id);
+      subscription = {
+        subscriptionRef: rawProviderSubscriptionId
+          ? await deriveControlSubscriptionRef(environment, productId, accountId, rawProviderSubscriptionId)
+          : null,
+        planId: optionalStringOrNull(state.plan_id),
+        profileVersion: integerOrNull(state.profile_version),
+        providerStatus: optionalStringOrNull(state.provider_status),
+        amountMinor: integerOrNull(state.amount_minor),
+        currency: optionalStringOrNull(state.currency),
+        currentPeriodStart: isoTimestampOrNull(state.current_period_start),
+        currentPeriodEnd: isoTimestampOrNull(state.current_period_end),
+        cancelAtPeriodEnd: state.cancel_at_period_end === true,
+        reconciledAt: isoTimestampOrNull(state.reconciled_at),
+      };
+    }
+
+    // DG-4: freshness is data, not a timer. Every member is null when the corresponding
+    // authoritative row is absent — never a fabricated placeholder and never a server-side
+    // staleness verdict (stale is labelled, not refused).
+    const freshness = {
+      reconciledAt: state ? isoTimestampOrNull(state.reconciled_at) : null,
+      appliedAt: projection ? isoTimestampOrNull(projection.applied_at) : null,
+      reconciliationVersion: state ? integerOrNull(state.reconciliation_version) : null,
+      latestTransitionVersion: projection ? integerOrNull(projection.latest_transition_version) : null,
+    };
+
+    // DG-3: readiness is the authenticated projection-level signal, bounded to states SB01 can
+    // authoritatively know. canExecutePaymentActions is a fixed literal false (binding security
+    // rule; never configurable, never widened).
+    const readiness = {
+      state: 'ready' as const,
+      canRead: true,
+      canExecutePaymentActions: false as const,
+      reason: CONTROL_READ_READINESS_REASON,
+    };
+
+    const warnings = [CONTROL_READ_PAYMENT_WARNING];
+
+    const body = {
+      schemaVersion: CONTROL_READ_SCHEMA_VERSION,
+      productId,
+      environment,
+      accountId,
+      observedAt: new Date().toISOString(),
+      readiness,
+      freshness,
+      subscription,
+      // DG-13: `payments: []` is structurally stable but never means "this account has no
+      // payments" on its own; the absence of any authoritative payment source is typed here.
+      paymentDataState: 'not_available',
+      payments: [] as unknown[],
+      warnings,
+      correlation_id: authority.correlationId,
+    };
+    return jsonResponse(body, 200, authority.correlationId);
   }
 
   private async handlePortal(request: Request): Promise<Response> {
