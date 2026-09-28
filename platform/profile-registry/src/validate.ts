@@ -31,6 +31,10 @@ export function collectRegistrationIssues(profile: ProductBillingProfile): strin
         issues.push(`plan ${plan.planId} has an invalid fixed price for ${currency}`);
       }
     }
+    if (plan.includedUpdateMonths !== undefined
+      && (!Number.isInteger(plan.includedUpdateMonths) || plan.includedUpdateMonths < 0)) {
+      issues.push(`plan ${plan.planId} includedUpdateMonths must be a non-negative integer`);
+    }
   }
   return issues;
 }

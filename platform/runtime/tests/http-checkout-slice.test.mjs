@@ -12,6 +12,7 @@ import {
 import { ProductBillingProfileRegistry } from '../../profile-registry/dist/src/registry.js';
 import { ps01TestProfile } from '../../profile-registry/dist/profiles/PS01.test.js';
 import { lk01TestProfile } from '../../profile-registry/dist/profiles/LK01.test.js';
+import { moduleHubTestProfile } from '../../profile-registry/dist/profiles/MODULE-HUB.test.js';
 
 class InMemoryBillingDb extends BillingDb {
   constructor() {
@@ -20,6 +21,7 @@ class InMemoryBillingDb extends BillingDb {
     this.customers = new Map();
     this.auditEvents = [];
     this.credentialBindings = new Map();
+    this.oneTimeEntitlementRows = [];
   }
   async ping() {}
   async close() {}
@@ -128,6 +130,10 @@ class InMemoryBillingDb extends BillingDb {
     }
     return null;
   }
+  async getOneTimeEntitlements(environment, productId, accountId) {
+    return this.oneTimeEntitlementRows.filter((row) => row.environment === environment
+      && row.product_id === productId && row.account_id === accountId);
+  }
   async audit(input) {
     this.auditEvents.push({ ...input, timestamp: new Date() });
   }
@@ -222,8 +228,10 @@ function createStripeMock(state) {
 const TEST_SECRET_KEY = 'sk_test_wstera_central_billing_slice_test_key_01';
 const TEST_ASSERTION_SECRET = 'super-secret-ps01-account-assertion-key-2026';
 const LK01_ASSERTION_SECRET = 'super-secret-lk01-account-assertion-key-2026';
+const MH_ASSERTION_SECRET = 'super-secret-module-hub-account-assertion-key-2026';
 const PS01_PRODUCT_ID = ps01TestProfile.productId;
 const LK01_PRODUCT_ID = lk01TestProfile.productId;
+const MH_PRODUCT_ID = moduleHubTestProfile.productId;
 
 function createTestHarness(overrides = {}) {
   const stripeState = {
@@ -241,6 +249,7 @@ function createTestHarness(overrides = {}) {
   const registry = new ProductBillingProfileRegistry();
   registry.register(ps01TestProfile);
   registry.register(lk01TestProfile);
+  registry.register(moduleHubTestProfile);
 
   const mockDb = new InMemoryBillingDb();
 
@@ -275,6 +284,14 @@ function createTestHarness(overrides = {}) {
         profileVersion: 1,
         scopes: ['checkout', 'read', 'portal'],
       },
+      {
+        keyId: 'module-hub-test-token-key-01',
+        token: 'wstera-test-token-module-hub-7777',
+        productId: MH_PRODUCT_ID,
+        environment: 'test',
+        profileVersion: 1,
+        scopes: ['read'],
+      },
     ],
     assertionKeys: [
       {
@@ -289,6 +306,12 @@ function createTestHarness(overrides = {}) {
         environment: 'test',
         secret: LK01_ASSERTION_SECRET,
       },
+      {
+        keyId: 'module-hub-assertion-key-01',
+        productId: MH_PRODUCT_ID,
+        environment: 'test',
+        secret: MH_ASSERTION_SECRET,
+      },
     ],
     returnUrls: {
       [PS01_PRODUCT_ID]: {
@@ -300,6 +323,11 @@ function createTestHarness(overrides = {}) {
         success: { default: 'https://linke.app/checkout/success' },
         cancel: { default: 'https://linke.app/checkout/cancel' },
         portal: { default: 'https://linke.app/portal/return' },
+      },
+      [MH_PRODUCT_ID]: {
+        success: { default: 'https://modules.wstera.com/checkout/success' },
+        cancel: { default: 'https://modules.wstera.com/checkout/cancel' },
+        portal: { default: 'https://modules.wstera.com/portal/return' },
       },
     },
     entitlementSigningKeys: [
@@ -432,6 +460,46 @@ test('valid PS01 Test checkout creates checkout session through real HTTP server
     assert.equal(retrieved.status, 'open');
   } finally {
     await close();
+  }
+});
+
+test('Module Hub one-time entitlement read is account-scoped and distinguishes perpetual source from expired updates', async () => {
+  const { runtime, mockDb } = createTestHarness();
+  await runtime.initialize();
+  const accountId = 'acct_module_hub_01';
+  const operationId = 'op_module_entitlements_01';
+  const now = Date.now();
+  mockDb.oneTimeEntitlementRows = [
+    { environment: 'test', product_id: MH_PRODUCT_ID, account_id: accountId,
+      plan_id: 'event-bus', package_ref: 'module-hub:event-bus', profile_version: 1, status: 'paid',
+      currency: 'THB', amount_minor: 139000, purchased_at: new Date(now - 400 * 86_400_000),
+      updates_until: new Date(now - 1), source_access_until: null, provider_payment_intent_id: 'pi_private' },
+    { environment: 'test', product_id: MH_PRODUCT_ID, account_id: accountId,
+      plan_id: 'http-client', package_ref: 'module-hub:http-client', profile_version: 1, status: 'refunded',
+      currency: 'USD', amount_minor: 4900, purchased_at: new Date(now - 20 * 86_400_000),
+      updates_until: new Date(now + 300 * 86_400_000), source_access_until: null, provider_payment_intent_id: 'pi_private_2' },
+  ];
+  const { baseUrl, close } = await startServer(runtime);
+  try {
+    const assertionToken = await buildValidAssertion({
+      iss: MH_PRODUCT_ID, key_id: 'module-hub-assertion-key-01', product_id: MH_PRODUCT_ID,
+      account_id: accountId, operation_id: operationId, action: 'one_time_entitlements_read',
+      secret: MH_ASSERTION_SECRET,
+    });
+    const response = await fetch(`${baseUrl}/v1/one-time-entitlements?account_id=${accountId}&operation_id=${operationId}`, {
+      headers: { authorization: 'Bearer wstera-test-token-module-hub-7777', 'x-wstera-account-assertion': assertionToken },
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.product_id, MH_PRODUCT_ID);
+    assert.deepEqual(body.one_time_entitlements.map((item) => [item.package_ref, item.source_access_active, item.updates_active]), [
+      ['module-hub:event-bus', true, false], ['module-hub:http-client', false, false],
+    ]);
+    assert.equal(JSON.stringify(body).includes('pi_private'), false);
+    assert.equal(body.product_state_mutated, false);
+  } finally {
+    await close();
+    await runtime.close();
   }
 });
 

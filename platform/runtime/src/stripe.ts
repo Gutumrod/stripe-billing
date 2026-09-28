@@ -7,6 +7,18 @@ export interface StripeTestAdapterOptions {
   timeoutMs?: number;
 }
 
+export interface StripeRefundCharge {
+  chargeId: string;
+  customerId: string;
+  paymentIntentId: string | null;
+  subscriptionId: string | null;
+  amountMinor: number;
+  amountRefundedMinor: number;
+  currency: string;
+  fullyRefunded: boolean;
+  livemode: boolean;
+}
+
 interface StripeObject {
   id: string;
   livemode?: boolean;
@@ -143,7 +155,50 @@ export class StripeTestAdapter {
   }
 
   async retrieveCheckoutSession(id: string): Promise<StripeObject> {
-    return this.request<StripeObject>(`/checkout/sessions/${encodeURIComponent(id)}`, 'GET');
+    return this.request<StripeObject>(
+      `/checkout/sessions/${encodeURIComponent(id)}?expand[]=line_items.data.price.product&expand[]=payment_intent.latest_charge`,
+      'GET',
+    );
+  }
+
+  async retrieveRefundCharge(id: string): Promise<StripeRefundCharge> {
+    const charge = await this.request<StripeObject>(
+      `/charges/${encodeURIComponent(id)}?expand[]=invoice.parent.subscription_details.subscription`,
+      'GET',
+    );
+    const invoice = charge.invoice && typeof charge.invoice === 'object'
+      ? charge.invoice as Record<string, unknown>
+      : {};
+    const parent = (invoice.parent ?? {}) as Record<string, unknown>;
+    const subscriptionDetails = (parent.subscription_details ?? {}) as Record<string, unknown>;
+    const directSubscription = typeof subscriptionDetails.subscription === 'string'
+      ? subscriptionDetails.subscription
+      : String((subscriptionDetails.subscription as Record<string, unknown> | undefined)?.id ?? '') || null;
+    const legacySubscription = typeof invoice.subscription === 'string'
+      ? invoice.subscription
+      : String((invoice.subscription as Record<string, unknown> | undefined)?.id ?? '') || null;
+    const customer = charge.customer;
+    const paymentIntent = charge.payment_intent;
+    const amount = charge.amount;
+    const amountRefunded = charge.amount_refunded;
+    const currency = typeof charge.currency === 'string' ? charge.currency.toUpperCase() : '';
+    if (typeof amount !== 'number' || !Number.isInteger(amount) || amount < 0
+      || typeof amountRefunded !== 'number' || !Number.isInteger(amountRefunded) || amountRefunded < 0
+      || !currency) {
+      throw new BillingRuntimeError('REFUND_CHARGE_INVALID', 'Stripe charge refund fields are incomplete', 502);
+    }
+    return {
+      chargeId: charge.id,
+      customerId: typeof customer === 'string' ? customer : String((customer as Record<string, unknown> | undefined)?.id ?? ''),
+      paymentIntentId: typeof paymentIntent === 'string' ? paymentIntent
+        : String((paymentIntent as Record<string, unknown> | undefined)?.id ?? '') || null,
+      subscriptionId: directSubscription ?? legacySubscription,
+      amountMinor: amount,
+      amountRefundedMinor: amountRefunded,
+      currency,
+      fullyRefunded: charge.refunded === true && amountRefunded === amount,
+      livemode: charge.livemode === true,
+    };
   }
 
   async listCustomerSubscriptions(customerId: string): Promise<string[]> {

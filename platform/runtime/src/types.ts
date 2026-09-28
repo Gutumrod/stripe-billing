@@ -43,6 +43,7 @@ export interface PlanProfile {
   pricesByCurrency?: Record<string, number>;
   salesStartsAt?: string | null;
   salesEndsAt?: string | null;
+  includedUpdateMonths?: number;
 }
 
 export interface RuntimeProfile {

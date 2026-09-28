@@ -96,10 +96,30 @@ export interface OutboxJob {
   productId: string;
   accountId: string;
   profileVersion: number;
-  jobType: 'reconcile' | 'entitlement_test_sink';
+  jobType: 'reconcile' | 'refund_reconcile' | 'purchase_reconcile' | 'entitlement_test_sink';
   payload: Record<string, unknown>;
   attemptCount: number;
   maxAttempts: number;
+  correlationId: string;
+}
+
+export interface OneTimePurchase {
+  id: string;
+  environment: BillingEnvironment;
+  productId: string;
+  accountId: string;
+  profileVersion: number;
+  planId: string;
+  packageRef: string;
+  providerCheckoutSessionId: string;
+  providerPaymentIntentId: string;
+  providerChargeId: string | null;
+  providerCustomerId: string;
+  status: 'paid' | 'refunded';
+  amountMinor: number;
+  currency: string;
+  purchasedAt: Date;
+  updatesUntil: Date;
   correlationId: string;
 }
 
@@ -389,6 +409,7 @@ export class BillingDb {
     livemode: boolean;
     providerObjectId: string | null;
     providerCustomerId: string | null;
+    paymentIntentId: string | null;
     hints: Record<string, unknown>;
     normalizedEnvelope: Record<string, unknown>;
     mapping: CustomerMapping | null;
@@ -419,20 +440,179 @@ export class BillingDb {
       if (!eventRow) throw new BillingRuntimeError('WEBHOOK_CLAIM_FAILED', 'Webhook claim could not be persisted', 500, true);
       const skipped = String(eventRow.status) === 'skipped' || !input.mapping;
       if (!skipped) {
-        const dedupeKey = `stripe:${input.providerEventId}:reconcile`;
+        const jobType: OutboxJob['jobType'] = input.eventType === 'charge.refunded'
+          ? 'refund_reconcile'
+          : ['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(input.eventType)
+            && input.hints.billing_model === 'one_time'
+            ? 'purchase_reconcile'
+            : 'reconcile';
+        const dedupeKey = `stripe:${input.providerEventId}:${jobType}`;
         await tx.unsafe(
           `insert into ${outboxTable} as existing_job
             (provider_event_id, environment, product_id, account_id, profile_version, job_type,
              payload, status, dedupe_key, correlation_id)
-           values ($1::uuid,$2,$3,$4,$5,'reconcile',$6::jsonb,'pending',$7,$8::uuid)
+           values ($1::uuid,$2,$3,$4,$5,$6,$7::jsonb,'pending',$8,$9::uuid)
            on conflict (dedupe_key) do update set ${OUTBOX_LEASE_PRESERVING_CONFLICT_SET}`,
           [eventRow.id, input.mapping!.environment, input.mapping!.productId, input.mapping!.accountId,
-           input.mapping!.profileVersion, tx.json({ providerEventId: input.providerEventId,
-             providerObjectId: input.providerObjectId, providerCustomerId: input.providerCustomerId }),
-           dedupeKey, input.correlationId],
+           input.mapping!.profileVersion, jobType, tx.json({ providerEventId: input.providerEventId,
+             providerObjectId: input.providerObjectId, providerCustomerId: input.providerCustomerId,
+             providerPaymentIntentId: input.paymentIntentId }), dedupeKey, input.correlationId],
         );
       }
       return { duplicate, skipped, eventDbId: String(eventRow.id) };
+    });
+  }
+
+  async recordOneTimePurchase(input: {
+    environment: BillingEnvironment; productId: string; accountId: string; profileVersion: number;
+    planId: string; packageRef: string; checkoutSessionId: string; paymentIntentId: string;
+    chargeId: string | null; customerId: string; amountMinor: number; currency: string;
+    purchasedAt: Date; updatesUntil: Date; correlationId: string; providerEventDbId: string | null;
+  }): Promise<{ purchase: OneTimePurchase; created: boolean }> {
+    const table = `${this.schemaPrefix}.runtime_one_time_purchases`;
+    const refunds = `${this.schemaPrefix}.runtime_payment_refunds`;
+    return this.sql.begin(async (tx) => {
+      const refund = (await tx.unsafe(
+        `select provider_event_id from ${refunds}
+         where environment=$1 and product_id=$2 and account_id=$3
+           and provider_payment_intent_id=$4 and fully_refunded=true
+         order by created_at desc limit 1`,
+        [input.environment, input.productId, input.accountId, input.paymentIntentId],
+      ))[0];
+      const inserted = await tx.unsafe(
+        `insert into ${table}
+          (environment, product_id, account_id, profile_version, plan_id, package_ref,
+           provider_checkout_session_id, provider_payment_intent_id, provider_charge_id,
+           provider_customer_id, status, amount_minor, currency, purchased_at,
+           source_access_until, updates_until, refund_event_id, correlation_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,null,$15,$16::uuid,$17::uuid)
+         on conflict (provider_checkout_session_id) do nothing returning *`,
+        [input.environment, input.productId, input.accountId, input.profileVersion, input.planId,
+         input.packageRef, input.checkoutSessionId, input.paymentIntentId, input.chargeId,
+         input.customerId, refund ? 'refunded' : 'paid', input.amountMinor, input.currency,
+         input.purchasedAt, input.updatesUntil, refund?.provider_event_id ?? null, input.correlationId],
+      );
+      const row = inserted[0] ?? (await tx.unsafe(
+        `select * from ${table} where provider_checkout_session_id=$1 for update`, [input.checkoutSessionId],
+      ))[0];
+      if (!row) throw new BillingRuntimeError('PURCHASE_RECORD_FAILED', 'One-time purchase record was not persisted', 500, true);
+      if (refund) {
+        await tx.unsafe(
+          `update ${refunds} set status='applied' where provider_event_id=$1::uuid`, [refund.provider_event_id],
+        );
+      }
+      const purchase: OneTimePurchase = {
+        id: String(row.id), environment: String(row.environment) as BillingEnvironment,
+        productId: String(row.product_id), accountId: String(row.account_id),
+        profileVersion: Number(row.profile_version), planId: String(row.plan_id), packageRef: String(row.package_ref),
+        providerCheckoutSessionId: String(row.provider_checkout_session_id),
+        providerPaymentIntentId: String(row.provider_payment_intent_id),
+        providerChargeId: row.provider_charge_id ? String(row.provider_charge_id) : null,
+        providerCustomerId: String(row.provider_customer_id), status: String(row.status) as OneTimePurchase['status'],
+        amountMinor: Number(row.amount_minor), currency: String(row.currency),
+        purchasedAt: new Date(String(row.purchased_at)), updatesUntil: new Date(String(row.updates_until)),
+        correlationId: String(row.correlation_id),
+      };
+      return { purchase, created: inserted.length === 1 };
+    });
+  }
+
+  async recordPaymentRefund(input: {
+    providerEventDbId: string; environment: BillingEnvironment; productId: string; accountId: string;
+    paymentIntentId: string | null; chargeId: string; amountMinor: number;
+    amountRefundedMinor: number; fullyRefunded: boolean; correlationId: string;
+  }): Promise<{ duplicate: boolean; purchaseMatched: boolean }> {
+    const refundTable = `${this.schemaPrefix}.runtime_payment_refunds`;
+    const purchaseTable = `${this.schemaPrefix}.runtime_one_time_purchases`;
+    return this.sql.begin(async (tx) => {
+      const inserted = await tx.unsafe(
+        `insert into ${refundTable}
+          (provider_event_id, environment, product_id, account_id, provider_payment_intent_id,
+           provider_charge_id, amount_minor, amount_refunded_minor, fully_refunded, status, correlation_id)
+         values ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::uuid)
+         on conflict (provider_event_id) do nothing returning provider_event_id`,
+        [input.providerEventDbId, input.environment, input.productId, input.accountId,
+         input.paymentIntentId, input.chargeId, input.amountMinor, input.amountRefundedMinor,
+         input.fullyRefunded, input.fullyRefunded ? 'recorded' : 'partial', input.correlationId],
+      );
+      const duplicate = inserted.length === 0;
+      if (!input.fullyRefunded || !input.paymentIntentId) return { duplicate, purchaseMatched: false };
+      await tx.unsafe(
+        `update ${purchaseTable} set status='refunded', provider_charge_id=$5,
+           refund_event_id=$6::uuid, updated_at=now()
+         where environment=$1 and product_id=$2 and account_id=$3
+           and provider_payment_intent_id=$4 and status='paid'
+         returning id`,
+        [input.environment, input.productId, input.accountId, input.paymentIntentId, input.chargeId, input.providerEventDbId],
+      );
+      const matching = (await tx.unsafe(
+        `select id from ${purchaseTable} where environment=$1 and product_id=$2 and account_id=$3
+         and provider_payment_intent_id=$4 limit 1`,
+        [input.environment, input.productId, input.accountId, input.paymentIntentId],
+      ))[0];
+      if (matching) {
+        await tx.unsafe(
+          `update ${refundTable} set status='applied' where provider_event_id=$1::uuid`, [input.providerEventDbId],
+        );
+      }
+      return { duplicate, purchaseMatched: Boolean(matching) };
+    });
+  }
+
+  async getOneTimeEntitlements(environment: BillingEnvironment, productId: string, accountId: string): Promise<Record<string, unknown>[]> {
+    const table = this.table('runtime_one_time_purchases');
+    const rows = await this.sql`
+      select plan_id, package_ref, profile_version, status, currency, amount_minor,
+             purchased_at, updates_until, source_access_until, provider_payment_intent_id
+      from ${table}
+      where environment=${environment} and product_id=${productId} and account_id=${accountId}
+      order by purchased_at, id
+    `.catch((error: unknown) => classifyDependencyFailure('getOneTimeEntitlements', error));
+    return rows.map((row) => ({ ...row }));
+  }
+
+  async reserveEntitlementVersion(input: {
+    environment: BillingEnvironment; productId: string; accountId: string;
+    providerSubscriptionId: string; providerEventDbId: string;
+  }): Promise<number> {
+    const stateTable = `${this.schemaPrefix}.runtime_reconciliation_state`;
+    const transitionTable = `${this.schemaPrefix}.runtime_entitlement_transitions`;
+    const reservationTable = `${this.schemaPrefix}.runtime_entitlement_version_reservations`;
+    return this.sql.begin(async (tx) => {
+      const prior = (await tx.unsafe(
+        `select transition_version from ${reservationTable} where provider_event_id=$1::uuid`,
+        [input.providerEventDbId],
+      ))[0];
+      if (prior) return Number(prior.transition_version);
+      const state = (await tx.unsafe(
+        `select reconciliation_version from ${stateTable}
+         where environment=$1 and product_id=$2 and account_id=$3 and provider_subscription_id=$4
+         for update`,
+        [input.environment, input.productId, input.accountId, input.providerSubscriptionId],
+      ))[0];
+      if (!state) throw new BillingRuntimeError('REFUND_RECONCILIATION_MISSING', 'Subscription must reconcile before refund revoke', 409, true);
+      const maxima = (await tx.unsafe(
+        `select greatest(
+           coalesce((select max(transition_version) from ${transitionTable}
+             where environment=$1 and product_id=$2 and account_id=$3 and provider_subscription_id=$4),0),
+           coalesce((select max(transition_version) from ${reservationTable}
+             where environment=$1 and product_id=$2 and account_id=$3 and provider_subscription_id=$4),0)
+         ) as max_version`,
+        [input.environment, input.productId, input.accountId, input.providerSubscriptionId],
+      ))[0];
+      const version = Math.max(Number(state.reconciliation_version), Number(maxima.max_version)) + 1;
+      await tx.unsafe(
+        `insert into ${reservationTable}
+          (environment, product_id, account_id, provider_subscription_id, provider_event_id, transition_version)
+         values ($1,$2,$3,$4,$5::uuid,$6)`,
+        [input.environment, input.productId, input.accountId, input.providerSubscriptionId, input.providerEventDbId, version],
+      );
+      await tx.unsafe(
+        `update ${stateTable} set reconciliation_version=$5
+         where environment=$1 and product_id=$2 and account_id=$3 and provider_subscription_id=$4`,
+        [input.environment, input.productId, input.accountId, input.providerSubscriptionId, version],
+      );
+      return version;
     });
   }
 
@@ -550,6 +730,8 @@ export class BillingDb {
     correlationId: string;
   }): Promise<ReconciliationState> {
     const tableName = `${this.schemaPrefix}.runtime_reconciliation_state`;
+    const transitionTable = `${this.schemaPrefix}.runtime_entitlement_transitions`;
+    const reservationTable = `${this.schemaPrefix}.runtime_entitlement_version_reservations`;
     return this.sql.begin(async (tx) => {
       const current = (await tx.unsafe(
         `select id::text, reconciliation_version, provider_status, snapshot_hash
@@ -559,7 +741,17 @@ export class BillingDb {
         [input.environment, input.productId, input.accountId, input.providerSubscriptionId],
       ))[0];
       const changed = !current || String(current.snapshot_hash) !== input.snapshotHash;
-      const nextVersion = current ? Number(current.reconciliation_version) + (changed ? 1 : 0) : 1;
+      const maxima = current ? (await tx.unsafe(
+        `select greatest(
+           coalesce((select max(transition_version) from ${transitionTable}
+             where environment=$1 and product_id=$2 and account_id=$3 and provider_subscription_id=$4),0),
+           coalesce((select max(transition_version) from ${reservationTable}
+             where environment=$1 and product_id=$2 and account_id=$3 and provider_subscription_id=$4),0)
+         ) as max_version`,
+        [input.environment, input.productId, input.accountId, input.providerSubscriptionId],
+      ))[0] : { max_version: 0 };
+      const versionFloor = Math.max(Number(current?.reconciliation_version ?? 0), Number(maxima.max_version ?? 0));
+      const nextVersion = changed ? versionFloor + 1 : Number(current?.reconciliation_version ?? 1);
       const rows = await tx.unsafe(
         `insert into ${tableName}
           (environment, product_id, account_id, profile_version, plan_id, provider_subscription_id,
@@ -591,7 +783,7 @@ export class BillingDb {
     });
   }
 
-  async getSubscriptionState(environment: BillingEnvironment, productId: string, accountId: string): Promise<Record<string, unknown> | null> {
+  async getSubscriptionState(environment: BillingEnvironment, productId: string, accountId: string, providerSubscriptionId?: string): Promise<Record<string, unknown> | null> {
     const table = this.table('runtime_reconciliation_state');
     const rows = await this.sql`
       select profile_version, plan_id, provider_subscription_id, provider_status,
@@ -599,6 +791,7 @@ export class BillingDb {
              cancel_at_period_end, reconciliation_version, reconciled_at
       from ${table}
       where environment=${environment} and product_id=${productId} and account_id=${accountId}
+        and (${providerSubscriptionId ?? null}::text is null or provider_subscription_id=${providerSubscriptionId ?? null})
       order by reconciled_at desc limit 1
     `.catch((error: unknown) => classifyDependencyFailure('getSubscriptionState', error));
     return rows[0] ? { ...rows[0] } : null;

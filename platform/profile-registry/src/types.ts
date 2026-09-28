@@ -24,6 +24,7 @@ export interface PlanContract {
   pricesByCurrency?: Record<string, number>;
   salesStartsAt?: string | null;
   salesEndsAt?: string | null;
+  includedUpdateMonths?: number;
 }
 
 export interface RailContract {

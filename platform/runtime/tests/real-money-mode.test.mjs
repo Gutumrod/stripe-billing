@@ -4,6 +4,7 @@ import { StripeTestAdapter } from '../dist/stripe.js';
 import { BillingRuntimeError } from '../dist/types.js';
 import { CentralBillingRuntime } from '../dist/runtime.js';
 import { ps01RealMoneyTestProfile } from '../../profile-registry/dist/profiles/PS01.real-money.test.js';
+import { moduleHubTestProfile } from '../../profile-registry/dist/profiles/MODULE-HUB.test.js';
 
 test('Stripe adapter requires a key prefix that matches its explicit environment', () => {
   assert.throws(
@@ -78,4 +79,21 @@ test('PS01 version 2 keeps A-10 fixed prices server-owned and closes annual laun
   assert.equal(plans['starter-annual-launch'].salesEndsAt, null);
   assert.deepEqual(Object.keys(ps01RealMoneyTestProfile.providerMappings.stripe.test.stripePriceIds), ['pro-monthly:THB']);
   assert.deepEqual(ps01RealMoneyTestProfile.providerMappings.stripe.live.stripePriceIds, {});
+});
+
+test('Module Hub profile contains only A-12 one-time SKUs as editable dual-currency data and has no renewal plan', () => {
+  const plans = Object.fromEntries(moduleHubTestProfile.plans.map((plan) => [plan.planId, plan]));
+  assert.equal(moduleHubTestProfile.status, 'pending_validation');
+  assert.equal(moduleHubTestProfile.commercialPolicy.refundWindowDays, 7);
+  assert.deepEqual(Object.keys(plans).sort(), [
+    'bundle-8', 'config-runtime', 'enterprise-features', 'event-bus', 'feature-flags',
+    'http-client', 'notification', 'product-catalog', 'rate-limit',
+  ].sort());
+  assert.deepEqual(plans['event-bus'].pricesByCurrency, { THB: 139000, USD: 3900 });
+  assert.deepEqual(plans['http-client'].pricesByCurrency, { THB: 169000, USD: 4900 });
+  assert.deepEqual(plans['product-catalog'].pricesByCurrency, { THB: 239000, USD: 6900 });
+  assert.deepEqual(plans['bundle-8'].pricesByCurrency, { THB: 869000, USD: 24900 });
+  assert.ok(moduleHubTestProfile.plans.every((plan) => plan.model === 'one_time' && plan.includedUpdateMonths === 12));
+  assert.deepEqual(moduleHubTestProfile.providerMappings.stripe.test.stripePriceIds, {});
+  assert.deepEqual(moduleHubTestProfile.providerMappings.stripe.live.stripePriceIds, {});
 });

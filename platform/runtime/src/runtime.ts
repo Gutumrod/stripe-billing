@@ -10,6 +10,7 @@ import {
   verifyEntitlementTransition,
 } from './security';
 import { StripeTestAdapter } from './stripe';
+import { projectOneTimeAccess } from './entitlements';
 import {
   BillingDependencyError,
   BillingRuntimeError,
@@ -80,6 +81,16 @@ function transitionTypeForStatus(status: string): 'grant' | 'revoke' | 'pending'
   if (status === 'active' || status === 'trialing') return 'grant';
   if (['canceled', 'unpaid', 'incomplete_expired'].includes(status)) return 'revoke';
   return 'pending';
+}
+
+function addCalendarMonths(input: Date, months: number): Date {
+  const source = new Date(input);
+  const day = source.getUTCDate();
+  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1,
+    source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -326,6 +337,7 @@ export class CentralBillingRuntime {
       }
       if (request.method === 'GET' && url.pathname === '/v1/subscription/status') return await this.handleSubscriptionStatus(request, url);
       if (request.method === 'GET' && url.pathname === '/v1/entitlements') return await this.handleEntitlements(request, url);
+      if (request.method === 'GET' && url.pathname === '/v1/one-time-entitlements') return await this.handleOneTimeEntitlements(request, url);
       if (request.method === 'GET' && url.pathname === CONTROL_READ_ROUTE) return await this.handleControlBillingSnapshot(request, url);
       if (request.method === 'POST' && url.pathname === '/v1/portal') {
         this.validateQuery(url, []);
@@ -457,6 +469,7 @@ export class CentralBillingRuntime {
           account_id: accountId,
           profile_version: String(authority.profile.profileVersion),
           plan_id: planId,
+          billing_model: plan.model,
           operation_id: operationId,
         },
       };
@@ -539,6 +552,47 @@ export class CentralBillingRuntime {
       profile_version: authority.profile.profileVersion,
       entitlement_projection: projection,
       source: 'core-test-sink',
+      product_state_mutated: false,
+      correlation_id: authority.correlationId,
+    }, 200, authority.correlationId);
+  }
+  private async handleOneTimeEntitlements(request: Request, url: URL): Promise<Response> {
+    this.validateQuery(url, ['account_id', 'operation_id']);
+    const accountId = requireString(url.searchParams.get('account_id'), 'account_id');
+    const operationId = requireString(url.searchParams.get('operation_id'), 'operation_id');
+    const authority = await this.authority(request, 'read', 'one_time_entitlements_read', accountId, operationId);
+    const entitlements = await this.db.getOneTimeEntitlements(
+      authority.credential.environment, authority.profile.productId, accountId,
+    );
+    await this.db.audit({
+      correlationId: authority.correlationId, eventName: 'one_time_entitlements.read', outcome: 'success',
+      environment: authority.credential.environment, productId: authority.profile.productId, accountId,
+      details: { purchase_count: entitlements.length, source: 'central_purchase_ledger' },
+    });
+    return jsonResponse({
+      account_id: accountId, product_id: authority.profile.productId,
+      profile_version: authority.profile.profileVersion,
+      one_time_entitlements: entitlements.map((purchase) => {
+        const access = projectOneTimeAccess({
+          status: purchase.status as 'paid' | 'refunded',
+          sourceAccessUntil: purchase.source_access_until as string | Date | null,
+          updatesUntil: purchase.updates_until as string | Date,
+        });
+        return {
+          plan_id: purchase.plan_id,
+          package_ref: purchase.package_ref,
+          profile_version: purchase.profile_version,
+          status: purchase.status,
+          source_access_active: access.sourceAccessActive,
+          updates_active: access.updatesActive,
+          currency: purchase.currency,
+          amount_minor: purchase.amount_minor,
+          purchased_at: isoTimestampOrNull(purchase.purchased_at),
+          updates_until: isoTimestampOrNull(purchase.updates_until),
+          source_access_until: isoTimestampOrNull(purchase.source_access_until),
+        };
+      }),
+      source: 'central_purchase_ledger',
       product_state_mutated: false,
       correlation_id: authority.correlationId,
     }, 200, authority.correlationId);
@@ -774,6 +828,7 @@ export class CentralBillingRuntime {
     const claimed = await this.db.claimWebhookEvent({
       providerEventId: event.providerEventId, eventType: event.eventType, livemode: event.livemode,
       providerObjectId: event.providerObjectId, providerCustomerId: event.providerCustomerId,
+      paymentIntentId: event.paymentIntentId,
       hints: event.hints, normalizedEnvelope: event.normalizedEnvelope, mapping, correlationId,
     });
     await this.db.audit({
@@ -815,6 +870,8 @@ export class CentralBillingRuntime {
     if (!job) return 'idle';
     try {
       if (job.jobType === 'reconcile') await this.processReconcileJob(job);
+      else if (job.jobType === 'refund_reconcile') await this.processRefundReconcileJob(job);
+      else if (job.jobType === 'purchase_reconcile') await this.processPurchaseReconcileJob(job);
       else if (job.jobType === 'entitlement_test_sink') await this.processEntitlementJob(job);
       else throw new BillingRuntimeError('OUTBOX_JOB_UNKNOWN', 'Unknown outbox job type', 500);
       await this.db.completeJob(job.id);
@@ -830,6 +887,187 @@ export class CentralBillingRuntime {
       });
       return status;
     }
+  }
+
+  private async processPurchaseReconcileJob(job: OutboxJob): Promise<void> {
+    const sessionId = requireString(job.payload.providerObjectId, 'providerObjectId');
+    const profile = this.config.profileRegistry.getRegistered(job.productId, job.environment, job.profileVersion);
+    if (profile.status !== 'active' && !(profile.status === 'pending_validation' && this.config.admissionTestMode)) {
+      throw new BillingRuntimeError('PROFILE_NOT_ACTIVE', 'Purchase profile cannot reconcile outside admission test mode', 409);
+    }
+    const mapping = await this.db.getCustomerByAccount(job.environment, job.productId, job.accountId);
+    if (!mapping?.providerCustomerId) {
+      throw new BillingRuntimeError('PURCHASE_CUSTOMER_MAPPING_MISSING', 'Provider customer mapping is missing', 409);
+    }
+    const session = await this.stripe.retrieveCheckoutSession(sessionId);
+    if (session.livemode !== (job.environment === 'live')) {
+      const code = job.environment === 'test' ? 'LIVE_PROVIDER_OBJECT_DENIED' : 'TEST_PROVIDER_OBJECT_DENIED';
+      throw new BillingRuntimeError(code, 'Checkout session differs from configured billing environment', 500);
+    }
+    if (session.mode !== 'payment') throw new BillingRuntimeError('PURCHASE_MODE_MISMATCH', 'Checkout session is not a one-time payment', 409);
+    if (session.payment_status !== 'paid') {
+      if (job.providerEventDbId) await this.db.markProviderEventComplete(job.providerEventDbId);
+      await this.db.audit({
+        correlationId: job.correlationId, eventName: 'purchase.reconciliation', outcome: 'unpaid',
+        environment: job.environment, productId: job.productId, accountId: job.accountId,
+        providerEventId: undefined, providerObjectId: sessionId,
+        details: { payment_status: String(session.payment_status ?? 'unknown') },
+      });
+      return;
+    }
+    const sessionCustomer = typeof session.customer === 'string'
+      ? session.customer : String((session.customer as Record<string, unknown> | undefined)?.id ?? '');
+    if (sessionCustomer !== mapping.providerCustomerId) {
+      throw new BillingRuntimeError('PURCHASE_CUSTOMER_MISMATCH', 'Checkout session customer differs from account mapping', 409);
+    }
+    const metadata = session.metadata && typeof session.metadata === 'object'
+      ? session.metadata as Record<string, unknown> : {};
+    const requiredMetadata: Array<[string, string]> = [
+      ['wstera_product_id', profile.productId], ['account_id', job.accountId],
+      ['profile_version', String(profile.profileVersion)], ['billing_model', 'one_time'],
+    ];
+    for (const [key, expected] of requiredMetadata) {
+      if (metadata[key] !== expected) throw new BillingRuntimeError('PURCHASE_METADATA_MISMATCH', `Checkout metadata mismatch: ${key}`, 409);
+    }
+    const planId = requireString(metadata.plan_id, 'plan_id');
+    const plan = profile.plans.find((candidate) => candidate.planId === planId);
+    if (!plan || plan.model !== 'one_time' || !plan.includedUpdateMonths) {
+      throw new BillingRuntimeError('PURCHASE_PLAN_INVALID', 'One-time purchase plan is missing its update entitlement window', 409);
+    }
+    const lineItemsObject = (session.line_items ?? {}) as { data?: Array<Record<string, unknown>> };
+    const lines = lineItemsObject.data ?? [];
+    if (lines.length !== 1 || lines[0].quantity !== 1) {
+      throw new BillingRuntimeError('PURCHASE_LINE_ITEMS_INVALID', 'One-time Checkout must contain exactly one mapped item and quantity', 409);
+    }
+    const price = (lines[0].price ?? {}) as Record<string, unknown>;
+    const priceId = requireString(price.id, 'price.id');
+    const resolved = planForPrice(profile, priceId);
+    if (resolved.plan.planId !== plan.planId) {
+      throw new BillingRuntimeError('PURCHASE_PRICE_PLAN_MISMATCH', 'Provider Price does not map to the session plan', 409);
+    }
+    const expectedAmount = plan.pricesByCurrency?.[resolved.currency]
+      ?? (resolved.currency === profile.currency.code ? plan.amountMinor : null);
+    const currency = typeof price.currency === 'string' ? price.currency.toUpperCase() : '';
+    const priceAmount = typeof price.unit_amount === 'number' ? price.unit_amount : null;
+    const totalAmount = typeof session.amount_total === 'number' ? session.amount_total : null;
+    if (!expectedAmount || priceAmount !== expectedAmount || totalAmount !== expectedAmount || currency !== resolved.currency) {
+      throw new BillingRuntimeError('PURCHASE_AMOUNT_CURRENCY_MISMATCH', 'Checkout amount or currency differs from pinned profile data', 409);
+    }
+    const paymentIntentValue = session.payment_intent;
+    const paymentIntentId = typeof paymentIntentValue === 'string'
+      ? paymentIntentValue : String((paymentIntentValue as Record<string, unknown> | undefined)?.id ?? '');
+    if (!paymentIntentId) throw new BillingRuntimeError('PURCHASE_PAYMENT_INTENT_MISSING', 'Paid Checkout session has no PaymentIntent', 409);
+    const latestChargeValue = (paymentIntentValue as Record<string, unknown> | undefined)?.latest_charge;
+    const chargeId = typeof latestChargeValue === 'string' ? latestChargeValue
+      : String((latestChargeValue as Record<string, unknown> | undefined)?.id ?? '') || null;
+    if (typeof session.created !== 'number' || !Number.isInteger(session.created)) {
+      throw new BillingRuntimeError('PURCHASE_TIMESTAMP_MISSING', 'Paid Checkout session has no provider creation timestamp', 409);
+    }
+    const purchasedAt = new Date(session.created * 1000);
+    const purchase = await this.db.recordOneTimePurchase({
+      environment: job.environment, productId: job.productId, accountId: job.accountId,
+      profileVersion: profile.profileVersion, planId: plan.planId, packageRef: plan.packageRef,
+      checkoutSessionId: sessionId, paymentIntentId, chargeId, customerId: mapping.providerCustomerId,
+      amountMinor: expectedAmount, currency: resolved.currency, purchasedAt,
+      updatesUntil: addCalendarMonths(purchasedAt, plan.includedUpdateMonths),
+      correlationId: job.correlationId, providerEventDbId: job.providerEventDbId,
+    });
+    if (job.providerEventDbId) await this.db.markProviderEventComplete(job.providerEventDbId);
+    await this.db.audit({
+      correlationId: job.correlationId, eventName: 'purchase.reconciliation',
+      outcome: purchase.purchase.status === 'refunded' ? 'paid_then_refunded' : 'paid',
+      environment: job.environment, productId: job.productId, accountId: job.accountId,
+      providerObjectId: sessionId,
+      details: { plan_id: plan.planId, package_ref: plan.packageRef, currency, amount_minor: expectedAmount,
+        updates_until: purchase.purchase.updatesUntil.toISOString(), duplicate: !purchase.created },
+    });
+  }
+
+  private async processRefundReconcileJob(job: OutboxJob): Promise<void> {
+    const chargeId = requireString(job.payload.providerObjectId, 'providerObjectId');
+    if (!job.providerEventDbId) throw new BillingRuntimeError('REFUND_EVENT_ID_MISSING', 'Refund event has no durable database identity', 500);
+    const charge = await this.stripe.retrieveRefundCharge(chargeId);
+    if (charge.livemode !== (job.environment === 'live')) {
+      const code = job.environment === 'test' ? 'LIVE_PROVIDER_OBJECT_DENIED' : 'TEST_PROVIDER_OBJECT_DENIED';
+      throw new BillingRuntimeError(code, 'Refund charge differs from configured billing environment', 500);
+    }
+    const mapping = await this.db.getCustomerByAccount(job.environment, job.productId, job.accountId);
+    if (!mapping?.providerCustomerId || charge.customerId !== mapping.providerCustomerId) {
+      throw new BillingRuntimeError('REFUND_CUSTOMER_MISMATCH', 'Refund charge customer differs from account mapping', 409);
+    }
+    if (charge.fullyRefunded && !charge.paymentIntentId) {
+      throw new BillingRuntimeError('REFUND_PAYMENT_INTENT_MISSING', 'Fully refunded charge has no PaymentIntent', 409);
+    }
+    const refund = await this.db.recordPaymentRefund({
+      providerEventDbId: job.providerEventDbId, environment: job.environment,
+      productId: job.productId, accountId: job.accountId, paymentIntentId: charge.paymentIntentId,
+      chargeId: charge.chargeId, amountMinor: charge.amountMinor,
+      amountRefundedMinor: charge.amountRefundedMinor, fullyRefunded: charge.fullyRefunded,
+      correlationId: job.correlationId,
+    });
+    if (!charge.fullyRefunded) {
+      await this.db.markProviderEventComplete(job.providerEventDbId);
+      await this.db.audit({
+        correlationId: job.correlationId, eventName: 'refund.reconciliation', outcome: 'partial_refund_no_revoke',
+        environment: job.environment, productId: job.productId, accountId: job.accountId,
+        providerEventId: typeof job.payload.providerEventId === 'string' ? job.payload.providerEventId : undefined,
+        providerObjectId: charge.chargeId,
+        details: { amount_minor: charge.amountMinor, amount_refunded_minor: charge.amountRefundedMinor, duplicate: refund.duplicate },
+      });
+      return;
+    }
+    if (!charge.subscriptionId) {
+      if (!refund.purchaseMatched) {
+        throw new BillingRuntimeError('REFUND_PURCHASE_UNMATCHED', 'Fully refunded charge has no reconciled one-time purchase yet', 409, true);
+      }
+      await this.db.markProviderEventComplete(job.providerEventDbId);
+      await this.db.audit({
+        correlationId: job.correlationId, eventName: 'refund.reconciliation', outcome: 'one_time_entitlement_revoked',
+        environment: job.environment, productId: job.productId, accountId: job.accountId,
+        providerEventId: typeof job.payload.providerEventId === 'string' ? job.payload.providerEventId : undefined,
+        providerObjectId: charge.chargeId,
+        details: { purchase_matched: true, duplicate: refund.duplicate },
+      });
+      return;
+    }
+    await this.processReconcileJob({ ...job, jobType: 'reconcile', payload: { providerObjectId: charge.subscriptionId } });
+    const state = await this.db.getSubscriptionState(job.environment, job.productId, job.accountId, charge.subscriptionId);
+    if (!state) throw new BillingRuntimeError('REFUND_RECONCILIATION_MISSING', 'Refunded subscription has no reconciled state', 409, true);
+    const profile = this.config.profileRegistry.getRegistered(job.productId, job.environment, job.profileVersion);
+    const planId = requireString(state.plan_id, 'plan_id');
+    const plan = profile.plans.find((candidate) => candidate.planId === planId);
+    if (!plan) throw new BillingRuntimeError('REFUND_PLAN_MISSING', 'Refunded subscription plan is absent from its pinned profile', 409);
+    const signingKey = this.config.entitlementSigningKeys.find((candidate) =>
+      candidate.productId === job.productId && candidate.environment === job.environment,
+    );
+    if (!signingKey) throw new BillingRuntimeError('ENTITLEMENT_SIGNING_KEY_MISSING', 'Entitlement signing key is missing', 500);
+    const transitionVersion = await this.db.reserveEntitlementVersion({
+      environment: job.environment, productId: job.productId, accountId: job.accountId,
+      providerSubscriptionId: charge.subscriptionId, providerEventDbId: job.providerEventDbId,
+    });
+    const now = Date.now();
+    const envelope: EntitlementTransitionEnvelope = {
+      environment: job.environment, product_id: job.productId, account_id: job.accountId,
+      profile_version: profile.profileVersion, plan_id: plan.planId,
+      transition_type: 'revoke', entitlement_keys: [], provider_subscription_id: charge.subscriptionId,
+      correlation_id: job.correlationId, transition_version: transitionVersion,
+      idempotency_key: await deriveIdempotencyKey([
+        job.environment, job.productId, job.accountId, charge.subscriptionId,
+        job.providerEventDbId, 'refund-revoke',
+      ]),
+      issued_at: new Date(now).toISOString(), expires_at: new Date(now + 120_000).toISOString(),
+      signing_key_id: signingKey.keyId,
+    };
+    const signed = await signEntitlementTransition(envelope, signingKey);
+    await this.db.createEntitlementTransition({ signed, providerEventDbId: job.providerEventDbId });
+    await this.db.audit({
+      correlationId: job.correlationId, eventName: 'refund.reconciliation', outcome: 'subscription_entitlement_revoked',
+      environment: job.environment, productId: job.productId, accountId: job.accountId,
+      providerEventId: typeof job.payload.providerEventId === 'string' ? job.payload.providerEventId : undefined,
+      providerObjectId: charge.chargeId,
+      details: { subscription_id: charge.subscriptionId, transition_version: transitionVersion,
+        duplicate: refund.duplicate },
+    });
   }
   private async processReconcileJob(job: OutboxJob): Promise<void> {
     if (job.environment !== this.config.environment) throw new BillingRuntimeError('JOB_ENVIRONMENT_MISMATCH', 'Reconciliation job differs from configured billing environment', 500);

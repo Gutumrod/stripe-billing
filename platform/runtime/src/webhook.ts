@@ -6,6 +6,8 @@ export interface VerifiedStripeEvent {
   livemode: boolean;
   providerObjectId: string | null;
   providerCustomerId: string | null;
+  paymentIntentId: string | null;
+  providerObjectType: string | null;
   hints: Record<string, unknown>;
   normalizedEnvelope: Record<string, unknown>;
 }
@@ -121,7 +123,13 @@ export async function verifyStripeWebhook(
     : String((object.subscription as Record<string, unknown> | undefined)?.id ?? '') || null;
   const providerObjectId = object.object === 'subscription' || objectId?.startsWith('sub_')
     ? objectId
-    : subscriptionRef;
+    : eventType === 'charge.refunded' || (object.object === 'checkout.session' && metadata.billing_model === 'one_time')
+      ? objectId
+      : subscriptionRef;
+  const paymentIntent = object.payment_intent;
+  const paymentIntentId = typeof paymentIntent === 'string'
+    ? paymentIntent
+    : String((paymentIntent as Record<string, unknown> | undefined)?.id ?? '') || null;
   const livemode = event.livemode === true || object.livemode === true;
   return {
     providerEventId: eventId,
@@ -129,11 +137,14 @@ export async function verifyStripeWebhook(
     livemode,
     providerObjectId,
     providerCustomerId: customer,
+    paymentIntentId,
+    providerObjectType: typeof object.object === 'string' ? object.object : null,
     hints: {
       product_id: metadata.wstera_product_id ?? null,
       account_id: metadata.account_id ?? null,
       profile_version: metadata.profile_version ?? null,
       plan_id: metadata.plan_id ?? null,
+      billing_model: metadata.billing_model ?? null,
     },
     normalizedEnvelope: {
       provider: 'stripe',
@@ -143,6 +154,10 @@ export async function verifyStripeWebhook(
       provider_object_id: providerObjectId,
       provider_customer_id: customer,
       livemode,
+      payment_intent_id: paymentIntentId,
+      amount: typeof object.amount === 'number' ? object.amount : null,
+      amount_refunded: typeof object.amount_refunded === 'number' ? object.amount_refunded : null,
+      refunded: object.refunded === true,
     },
   };
 }

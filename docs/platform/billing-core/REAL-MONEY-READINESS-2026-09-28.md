@@ -2,48 +2,68 @@
 
 Task: `HOUSE-SB01-REAL-MONEY`
 Branch: `codex/sb01-real-money-20260928`
-Classification: engineering work in progress; **not ready to deploy or accept money**.
+สถานะ: งาน implementation ระดับ source/test; **HOLD — ยังห้าม deploy หรือเปิดรับเงินจริง**
 
-## Verified changes in this branch
+## ขอบเขตและสถานะปัจจุบัน
 
-- Runtime selection accepts `BILLING_ENVIRONMENT=test` or exactly `production`. `production` maps to the internal `live` environment and defaults to `billing_core`; the Stripe adapter requires the matching key prefix. Test remains bound to `billing_core_staging` and rejects live keys, live provider objects, and live webhooks.
-- Checkout supports profile-pinned fixed currency prices and requires `locale=th` with THB or `locale=en` with USD. It does not convert currency. Legacy profiles without a currency map continue to resolve only their profile currency.
-- Added an unactivated PS01 pricing candidate (profile version 2) with the A-10 monthly/launch-annual prices and a 7-day refund-window data field. Only its Pro monthly THB price points at an existing Stripe TEST Price. All other prices remain unmapped. Annual launch plans have no sales window and are rejected by checkout.
-- Added a Stripe Checkout `mode=payment` adapter operation and route selection for profile-pinned one-time plans. There is no active one-time plan or durable one-time entitlement implementation in this branch.
-- Existing Control read projection was not changed; it remains read-only and exposes no payment action authority.
+- Runtime แยก `BILLING_ENVIRONMENT=test|production`; `production` ผูกกับ environment ภายใน `live` และ schema `billing_core`. Test ผูก `billing_core_staging`. Stripe key prefix ต้องตรง environment; test runtime ปฏิเสธ live keys, objects และ webhooks.
+- Checkout เก็บ THB/USD แบบจำนวนตายตัวใน profile; `locale=th` เลือก THB และ `locale=en` เลือก USD. ไม่มีการแปลงค่าเงินอัตโนมัติ.
+- PS01 profile v2 เป็น candidate ที่ยัง `pending_validation`; มี A-10 monthly/annual price data แต่ mappings ยังไม่ครบ และ annual offer ยังปิดจนกว่าจะกำหนด sales window. มีเพียง Pro monthly THB ที่ผูก TEST Price เดิม.
+- เพิ่ม reconciliation สำหรับ `charge.refunded`, purchase ledger แบบ one-time, สิทธิใช้ source ต่อเนื่องหลังปีแรก, วันหมดอายุ update 12 เดือน, และการถอนสิทธิเมื่อคืนเงินเต็มจำนวน. Partial refund ไม่ถอนสิทธิ. Refund ที่มาถึงก่อน purchase จะถูกเก็บไว้และจับคู่ตอน purchase reconcile.
+- Module Hub profile candidate เก็บ A-12 เป็น versioned profile data: 8 โมดูลและ bundle-8, ซื้อขาด, ไม่มี renewal product, update ฟรี 12 เดือน. ตัวเลขอยู่นอก business logic. Profile ไม่มี Stripe Price IDs และยัง `pending_validation`.
+- Module Hub SKUs ที่บรีฟไม่ได้ล็อกยังไม่ใส่ใน profile; ตารางราคา 0.7 สำหรับรายการเหล่านั้นยังไม่ถูกยืนยัน/เปิดขาย.
+- `productId=module-hub` และ `productCode=MODULE-HUB` เป็นชื่อ provisional จากงานนี้ ยังไม่มีหลักฐานยืนยันกับ product registry.
+- Existing LR-2F-A Control projection คงเดิม เป็น read-only และ `canExecutePaymentActions:false`.
+
+## Module Hub — Addendum A-12
+
+ราคานี้มาจาก Owner lock ใน STATUS-HOUSE Addendum A-12; THB/USD เป็นราคาคงที่ ไม่คำนวณแลกเปลี่ยน:
+
+| สินค้า | THB | USD |
+|---|---:|---:|
+| event-bus, feature-flags, rate-limit (แต่ละชิ้น) | ฿1,390 | $39 |
+| http-client, enterprise-features, notification, config-runtime (แต่ละชิ้น) | ฿1,690 | $49 |
+| product-catalog | ฿2,390 | $69 |
+| bundle-8 | ฿8,690 | $249 |
+
+ไม่มีการต่ออายุ; ใช้ source version ที่ซื้อได้ต่อไปโดยไม่มีกำหนด และได้รับ update ใหม่ฟรี 12 เดือนนับจากเวลาซื้อ. Profile candidate ใส่ระยะเวลา 12 เดือนและไม่มี plan ต่ออายุ. ราคานี้เป็นข้อมูลแก้ไขได้ใน product profile; runtime ไม่ฝังจำนวนเงิน.
 
 ## Phase gates
 
-| Phase / gate | State | Evidence or blocker |
+| Phase / gate | สถานะ | หลักฐาน / blocker |
 |---|---|---|
-| Phase 0 preflight | PASS | See Vault report. Base `a7d6583` selected over destructive WIP `9c5e1be`; reuse and MT01 checks passed. |
-| Phase 1 G1 environment gate | PARTIAL | Test key/object/webhook rejection remains. Production mode is code-gated by exact environment, `billing_core`, and `sk_live_` prefix. No live profile, production credential, deployed host, DB, or live verification is present. |
-| Phase 1 G7 refund revoke | BLOCKED | Subscription cancellation already reconciles to revoke. `charge.refunded` is not yet linked through durable refund reconciliation; no policy-backed monotonic refund transition exists yet. |
-| Phase 1 G8 PS01 profile | PARTIAL | Versioned A-10 pricing candidate exists, but three monthly/annual price mappings and all production mappings are absent. Profile is pending and annual offers cannot pass without an approved launch start/end. |
-| Phase 1 G9 control projection | PASS (existing) | Existing LR-2F-A implementation and accepted projection tests remain intact; `canExecutePaymentActions` remains false. |
-| Phase 2 G4 USD | PARTIAL | Fixed THB/USD amounts are represented; locale mismatch is rejected. USD Stripe Price mapping and a mapped checkout/reconciliation proof are absent. |
-| Phase 3 G5 one-time | PARTIAL | `mode=payment` adapter path exists. Missing durable purchase/license entitlement, 12-month update expiry, refund revocation, and Module Hub price prevents activation. |
-| Phase 4 runbook / release | BLOCKED | Runtime is still Node `server.mjs`, not the locked Cloudflare Hono Worker + `scheduled()` host. No production migration/deploy is authorized or performed. Readiness ceiling is below BUILD_PASS. |
-| G6 PromptPay | OUT OF SCOPE | No implementation; add to later plan as directed. |
+| Phase 0 preflight | PASS | เลือก base `a7d65834326b22a460d0d0cb12dab2b4e657232b`; แยกจาก destructive WIP `9c5e1be`; reuse/MT01 review อยู่ใน Vault report และ Module Reuse Check. |
+| Phase 1 G1 environment | PARTIAL | guards และ negative tests ผ่านใน source; ไม่มี production runtime/schema/key หรือ live verification. |
+| Phase 1 G7 refund revoke | SOURCE-LEVEL PASS / DB UNVERIFIED | Provider Charge lookup, webhook durable routing, idempotent refund ledger, full/partial refund semantics และ monotonic subscription transition version มี tests. Migration ไม่ได้ apply และไม่มี real Postgres verification. |
+| Phase 1 G8 PS01 | PARTIAL | Profile v2 และ A-10 pricing data มี; Stripe Price mapping, annual sales window และ production evidence ยังไม่ครบ. |
+| Phase 1 G9 Control | PASS (existing contract) | Regression suite ผ่าน; projection ไม่เปลี่ยนและคง `canExecutePaymentActions:false`. |
+| Phase 2 G4 USD | SOURCE-LEVEL PASS / PROVIDER UNVERIFIED | เลือก THB/USD ตาม locale และจำนวนตายตัว; negative tests ผ่าน. USD TEST Price IDs และ Stripe TEST API evidence ไม่มี. |
+| Phase 3 G5 Module Hub | SOURCE-LEVEL PARTIAL | A-12 prices, no-renewal profile, perpetual source/update window, read projection และ refund revoke code อยู่ใน branch. Profile ยัง pending; Product identity/Stripe mappings/DB migration/integration evidence ยังไม่ยืนยัน. |
+| Phase 4 runbook / release | BLOCKED | ยังเป็น Node `server.mjs`; locked platform host คือ Hono บน Cloudflare Worker พร้อม `scheduled()` และยังไม่มี adapter qualification. Migration provenance/application, pre-migration dump, deploy steps, rollback rehearsal และ independent review ยังไม่ครบ. |
+| G6 PromptPay | OUT OF SCOPE | ไม่ทำในงานนี้; วางไว้ในแผนเฟสถัดไป. |
 
 ## Verification
 
-- `npm ci`: PASS; lockfile install, zero reported vulnerabilities.
 - `npm run typecheck`: PASS.
-- Focused checkout, authority, mode, and new Stripe adapter tests: 36/36 PASS.
-- Full runtime suite: 70 PASS; 3 real-Postgres test files fail before test execution with `BLOCKED_CREDENTIAL: BILLING_DATABASE_URL` (LR-2D, LR-2E, webhook JSONB). No remote/LAB database was used.
-- Stripe integration: mock only. The secret file had no SB01/stripe-billing test key; a Booking2 test key was detected by label only and was not loaded or used. No live key was read or used.
-- No database migration was applied, no Stripe API was called, no production host was changed, and no deployment occurred.
+- `npm test`: build ผ่าน; 80 tests PASS. 3 real-Postgres test files หยุดก่อน execution ด้วย `BLOCKED_CREDENTIAL: BILLING_DATABASE_URL` (LR-2D, LR-2E, webhook JSONB/outbox crash window). ไม่ได้ใช้ hosted/LAB DB.
+- Focused run: `node --test tests/real-money-mode.test.mjs tests/real-money-refund.test.mjs tests/real-money-webhook.test.mjs tests/real-money-migration.test.mjs tests/http-checkout-slice.test.mjs tests/negative-authority-matrix.test.mjs`: 45/45 PASS.
+- Build: `npm test` เรียก registry/runtime TypeScript build และ build ผ่านก่อน DB test fixtures หยุด.
+- `git diff --check`: PASS.
+- Fail-before evidence บน detached base `a7d6583`: refund adapter tests 2 fail เพราะยังไม่มี Charge resolver; signed webhook routing tests 2 fail เพราะ Charge/session IDs ยังไม่ถูกเลือก; migration test setup fail เพราะ migration 0003 ยังไม่มี. Pass-after tests อยู่ใน focused run.
+- Stripe ใช้ mock เท่านั้น: ไม่มี SB01/stripe-billing TEST key; ไม่โหลด key ของโปรเจกต์อื่น. ไม่มี Stripe API call, DB migration, deploy หรือ production write.
+- เอกสาร Stripe ระบุว่า charge amount ใช้ minor units และ THB เป็นสกุลสองตำแหน่ง; ดู [Supported currencies](https://docs.stripe.com/currencies).
+- Independent review ยังไม่เกิด; ผู้ตรวจต้องเป็น session อื่น.
 
-## Owner actions before a future production release
+## Owner actions ก่อน release
 
-1. Provide/review Stripe TEST Price mappings for PS01 Starter/Pro monthly and annual THB/USD and webhook/database test access. Do not create or activate production Prices from this worker.
-2. Set the actual first-sale launch window for the annual launch offer; without that window the annual plans stay closed.
-3. Resolve the Module Hub one-time price and any year-two update-renewal rule before a priced Module Hub profile can be activated.
-4. Implement and independently verify `charge.refunded` reconciliation, monotonic entitlement revocation, and durable one-time source-license/update entitlement state with negative and replay tests.
-5. Port/adapt the runtime to the locked Cloudflare Hono Worker + internal scheduled execution contract and qualify it against the existing Project A schemas/roles. Preserve the read-only Control contract.
-6. Only after code review, prepare the Owner-operated production runbook: secrets by name only, safe-forward migration order and pre-migration dump, rollback, and click-by-click deploy instructions. Owner performs all production DB/host/Stripe-live actions.
+1. ยืนยัน Product Registry identity สำหรับ Module Hub (`productId`/`productCode`) และจัด TEST credentials ของ SB01 ผ่านช่องทางลับที่อนุมัติ.
+2. สร้าง/ยืนยัน Stripe TEST Products และ Price IDs สำหรับ PS01 ทั้ง THB/USD และ Module Hub 9 SKU; บันทึก immutable mappings ใน profile version ใหม่. ห้ามใช้ค่า USD แปลงจาก THB.
+3. ระบุ annual PS01 sales window และตรวจว่า refund policy reference/profile ตรงกับ Owner lock ก่อน activate.
+4. จัด local/isolated Postgres staging credential สำหรับ migration qualification; reconcile migration provenance กับ Project A schema/role และทดสอบ forward migration, replay, refund-before-purchase, refund duplicate, full/partial refund และ rollback application โดยเก็บ money tables.
+5. ทำ Hono/Cloudflare Worker + `scheduled()` adapter ให้ตรง `BILLING_CORE_PLAN`, ทดสอบกับ staging binding/role โดยไม่ deploy production และรักษา Control contract.
+6. ให้ independent reviewer ตรวจ branch SHA หลัง remediation; แก้ finding และให้ตรวจซ้ำ.
+7. หลัง gates ข้างต้นผ่านเท่านั้น ให้ Owner จัดทำ/ดำเนิน production dump, migration, secrets, Stripe Live และ deploy จาก Cloudflare Dashboard ตาม release runbook ที่ตรวจแล้ว. Codex ไม่ทำขั้น production เหล่านี้.
 
 ## Release decision
 
-**HOLD — do not deploy or accept payment.** The verified code advances guarded mode selection, fixed-currency profile data, and a generic one-time Checkout request, but G7, complete price mappings, durable one-time entitlements, production hosting, database integration evidence, and independent review remain open. This document records current implementation evidence; it does not authorize production actions.
+**HOLD — ห้าม deploy หรือรับเงินจริง.** งาน source ผ่าน focused regression แต่ยังขาด integration กับ Postgres/Stripe TEST, mappings ที่เปิด checkout ได้, identity confirmation, Worker architecture, migration qualification และ independent review. A-12 ปิด blocker เรื่องราคาของ 8 โมดูลกับ bundle แล้ว; รายการนอกขอบเขตยังไม่ถูกเปิดขาย.
