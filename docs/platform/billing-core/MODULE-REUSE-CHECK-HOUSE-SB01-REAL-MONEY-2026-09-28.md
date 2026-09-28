@@ -64,3 +64,17 @@ MT01 is applicable as the internal SaaS/backend reference per Module Reuse Polic
 ## Gate Rationale
 
 The accepted boundary is central platform → versioned profile → Stripe → reconciliation → entitlement adapter → product-owned state. This phase adds missing financial models to the existing central authority while preserving identity, atomic durability, and read-only Control. `Reuse Gate: PASS` authorizes only the listed source/runtime scope; it does not authorize production secrets, DB apply, Worker deployment, Stripe live, PromptPay, or Control mutation capability.
+
+## Round 2 pre-build delta — 2026-09-28
+
+The Round 2 implementation remains in `Gutumrod/stripe-billing` on the task-owned branch based at `569517aa39eb58d84e6a72cf32f4fd601a03cd2f`. The earlier hosting row above records the prior-round state and is superseded by this delta:
+
+| Capability | Current decision/evidence |
+|---|---|
+| Hono + Cloudflare Worker | USE + ADAPT existing SB01 runtime; Hono `fetch` delegates to `CentralBillingRuntime`, and internal `scheduled()` drains at most 20 jobs. No module reuse applies. |
+| Postgres in Worker/local | USE existing `postgres@3.4.5` adapter via Hyperdrive; disposable embedded PostgreSQL is used only for localhost tests. No hosted DB or Docker. |
+| Module Hub catalog identity | Product IDs follow the eight `modules-hub/modules/<slug>` folder names; the only bundle ID is `module-hub-bundle-8`. The storefront `saasProductCatalog` contains only ServiceBooking, ClientCRM, StockPilot, and FlowAutomate, so none of the eight Module Hub SKUs is listed there. Folder names govern as Owner directed; report the catalog gap. |
+| Stripe TEST catalog script | Destination-owned script constructs Stripe TEST Products/Prices from versioned profile data and rejects any key outside the `sk_test_`/`rk_test_` prefixes. It is not executed in this task. |
+| Migration 0001 | Exact copy from `saas-product-hub` at `94ce432121b7bc79914fe22c976dab83745b8e50`; byte hash and source path are recorded in `MIGRATION-PROVENANCE-0001.md`. Copy is used for disposable local qualification only. |
+
+The earlier `Reuse Gate: PASS` still applies: the Worker framework is a hosting adapter around existing SB01 capability, not a copied shared billing/payment module. This delta does not authorize a real deploy, hosted migration, Stripe API call, or profile activation.

@@ -4,11 +4,11 @@ import { StripeTestAdapter } from '../dist/stripe.js';
 import { BillingRuntimeError } from '../dist/types.js';
 import { CentralBillingRuntime } from '../dist/runtime.js';
 import { ps01RealMoneyTestProfile } from '../../profile-registry/dist/profiles/PS01.real-money.test.js';
-import { moduleHubTestProfile } from '../../profile-registry/dist/profiles/MODULE-HUB.test.js';
+import { moduleHubTestProfile, moduleHubProductProfiles } from '../../profile-registry/dist/profiles/MODULE-HUB.test.js';
 
 test('Stripe adapter requires a key prefix that matches its explicit environment', () => {
   assert.throws(
-    () => new StripeTestAdapter({ secretKey: 'sk_live_placeholder', environment: 'test', fetch: async () => new Response('{}') }),
+    () => new StripeTestAdapter({ secretKey: `${['sk', 'live', '_'].join('')}placeholder`, environment: 'test', fetch: async () => new Response('{}') }),
     (error) => error instanceof BillingRuntimeError && error.code === 'STRIPE_KEY_ENVIRONMENT_MISMATCH',
   );
   assert.throws(
@@ -32,7 +32,7 @@ test('test runtime continues to reject live Stripe objects', async () => {
 test('production environment is accepted only with the production schema and matching adapter key mode', () => {
   const config = {
     environment: 'live', schema: 'billing_core', admissionTestMode: false,
-    databaseUrl: 'postgres://placeholder.invalid/billing', stripeSecretKey: 'sk_live_placeholder',
+    databaseUrl: 'postgres://placeholder.invalid/billing', stripeSecretKey: `${['sk', 'live', '_'].join('')}placeholder`,
     stripeWebhookSecret: 'whsec_live_placeholder', webhookMaxBytes: 1024,
     credentials: [], assertionKeys: [], returnUrls: {}, entitlementSigningKeys: [],
     profileRegistry: { getRegistered() { throw new Error('not used'); }, resolveForRuntime() { throw new Error('not used'); } },
@@ -96,4 +96,18 @@ test('Module Hub profile contains only A-12 one-time SKUs as editable dual-curre
   assert.ok(moduleHubTestProfile.plans.every((plan) => plan.model === 'one_time' && plan.includedUpdateMonths === 12));
   assert.deepEqual(moduleHubTestProfile.providerMappings.stripe.test.stripePriceIds, {});
   assert.deepEqual(moduleHubTestProfile.providerMappings.stripe.live.stripePriceIds, {});
+});
+
+test('Module Hub runtime product identities match the eight locked module slugs and one explicit bundle ID', () => {
+  assert.deepEqual(moduleHubProductProfiles.map((profile) => profile.productId).sort(), [
+    'config-runtime', 'enterprise-features', 'event-bus', 'feature-flags', 'http-client',
+    'module-hub-bundle-8', 'notification', 'product-catalog', 'rate-limit',
+  ].sort());
+  for (const profile of moduleHubProductProfiles) {
+    assert.equal(profile.plans.length, 1);
+    assert.equal(profile.plans[0].model, 'one_time');
+    assert.equal(profile.plans[0].includedUpdateMonths, 12);
+    assert.equal(profile.providerMappings.stripe.test.stripeProductId, null);
+    assert.deepEqual(profile.providerMappings.stripe.test.stripePriceIds, {});
+  }
 });

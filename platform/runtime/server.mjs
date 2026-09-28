@@ -8,7 +8,7 @@ const { CentralBillingRuntime } = require('./dist');
 const { ProductBillingProfileRegistry } = require('../profile-registry/dist/src/registry');
 const { ps01TestProfile } = require('../profile-registry/dist/profiles/PS01.test');
 const { ps01RealMoneyTestProfile } = require('../profile-registry/dist/profiles/PS01.real-money.test');
-const { moduleHubTestProfile } = require('../profile-registry/dist/profiles/MODULE-HUB.test');
+const { moduleHubProductProfiles } = require('../profile-registry/dist/profiles/MODULE-HUB.test');
 const { lk01TestProfile } = require('../profile-registry/dist/profiles/LK01.test');
 
 function required(name) {
@@ -35,7 +35,7 @@ const registry = new ProductBillingProfileRegistry();
 if (environment === 'test') {
   registry.register(ps01TestProfile);
   registry.register(ps01RealMoneyTestProfile);
-  registry.register(moduleHubTestProfile);
+  for (const profile of moduleHubProductProfiles) registry.register(profile);
   registry.register(lk01TestProfile);
 }
 

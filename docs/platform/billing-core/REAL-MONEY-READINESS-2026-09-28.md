@@ -67,3 +67,15 @@ Branch: `codex/sb01-real-money-20260928`
 ## Release decision
 
 **HOLD — ห้าม deploy หรือรับเงินจริง.** งาน source ผ่าน focused regression แต่ยังขาด integration กับ Postgres/Stripe TEST, mappings ที่เปิด checkout ได้, identity confirmation, Worker architecture, migration qualification และ independent review. A-12 ปิด blocker เรื่องราคาของ 8 โมดูลกับ bundle แล้ว; รายการนอกขอบเขตยังไม่ถูกเปิดขาย.
+
+## Round 2 implementation delta — 2026-09-28
+
+บรีฟ `17-SB01-ROUND-2.md` อนุมัติให้ทำ Worker adapter, local disposable PostgreSQL และ Stripe TEST catalog script โดยยังห้าม deploy/API call จริง. สถานะ implementation หลัง delta:
+
+- เพิ่ม Hono Worker `fetch` + internal `scheduled()` (batch สูงสุด 20 jobs/รอบ, cron ทุก 15 นาที) และ runbook Dashboard/rollback; `wrangler dev --local` กับ PostgreSQL localhost ตอบ `/healthz` 200 และ `wrangler deploy --dry-run` ผ่าน.
+- เพิ่ม embedded PostgreSQL runner บน localhost และ migration replay 0001–0003. `npm test` รวม unit/integration ผ่าน 110/110; real-Postgres suites 25/25.
+- Worker/Node test registration ใช้ product IDs ตาม slug โฟลเดอร์ Module Hub 8 รายการ และ bundle `module-hub-bundle-8`; A-12 prices ยังคงอยู่ใน versioned editable profile data. `hub-web/client/src/productCatalog.ts` ไม่มีทั้ง 8 SKU; ใช้ slug `modules-hub/modules/` ตามคำสั่ง Owner และบันทึก gap.
+- เพิ่ม `PS01_ANNUAL_LAUNCH_STARTS_AT` / `PS01_ANNUAL_LAUNCH_ENDS_AT`; ถ้าค่าไม่ครบ, format ไม่ถูก หรือ end ไม่หลัง start จะ fail closed. Stripe TEST catalog script มี prefix guard และยังไม่ถูกรัน.
+- Migration 0001 คัดลอก byte-for-byte จาก SaaS Product Hub SHA `94ce432121b7bc79914fe22c976dab83745b8e50`; provenance/hashes อยู่ใน `MIGRATION-PROVENANCE-0001.md`.
+
+สถานะยัง HOLD: ไม่มี Stripe TEST Product/Price IDs เพราะยังไม่รันสคริปต์ตามบรีฟ, ไม่มี profile activation, hosted schema/role verification หรือ independent review. Catalog SKU ที่อยู่นอก 8 โมดูลกับ bundle ยังไม่ล็อกและไม่ได้เพิ่ม.

@@ -6,14 +6,20 @@
   "scripts": {
     "build:registry": "tsc -p ../profile-registry/tsconfig.json",
     "build": "npm run build:registry && tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "typecheck": "npm run build:registry && tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node scripts/run-postgres-integration.mjs --all",
+    "test:postgres": "node scripts/run-postgres-integration.mjs",
+    "dev:worker": "npm run build && wrangler dev --local",
+    "dry-run:worker": "npm run build && wrangler deploy --env production --dry-run",
     "start": "node server.mjs"
   },
   "dependencies": {
+    "hono": "^4.13.10",
     "postgres": "3.4.5"
   },
   "devDependencies": {
-    "typescript": "5.7.3"
+    "embedded-postgres": "^18.4.0-beta.17",
+    "typescript": "5.7.3",
+    "wrangler": "^4.142.0"
   }
 }

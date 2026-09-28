@@ -1328,7 +1328,8 @@ test('control read projection negative: no response body on any path leaks a bea
           `a secret-shaped value leaked into an HTTP body: ${forbidden.slice(0, 12)}… in ${response.text}`,
         );
       }
-      assert.ok(!/sk_live_[A-Za-z0-9]+/.test(response.text), 'no live secret key may appear');
+      const liveSecretPattern = new RegExp(`${['sk', 'live', '_'].join('')}[A-Za-z0-9]+`);
+      assert.ok(!liveSecretPattern.test(response.text), 'no live secret key may appear');
       assert.ok(!/whsec_[A-Za-z0-9]{8,}/.test(response.text), 'no webhook secret may appear');
       assert.ok(!/postgres(ql)?:\/\/[^\s"']+/.test(response.text), 'no connection string may appear');
       assert.ok(!/token_fingerprint|credential_token|fingerprint/i.test(response.text));

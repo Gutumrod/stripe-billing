@@ -175,7 +175,8 @@ test('LR-2E: PS01 and LK01 do not share an outbox dedupe_key for the same accoun
     // these two rows by their own id (never a foreign row) the instant their dedupe_key has been
     // read, rather than leaving them leasable until this test's `finally` block runs.
     await verify`
-      update ${verify(`${SCHEMA}.runtime_outbox_jobs`)} set status = 'completed', completed_at = now()
+      update ${verify(`${SCHEMA}.runtime_outbox_jobs`)}
+      set status = 'completed', lease_owner = null, lease_expires_at = null, completed_at = now()
       where id = any(${jobs.map((j) => j.id)}::uuid[])
     `;
 

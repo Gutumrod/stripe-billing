@@ -84,3 +84,33 @@ export const moduleHubTestProfile: ProductBillingProfile = {
     rollbackProfileVersion: null,
   },
 };
+
+const modulePrices: Array<[string, number, number]> = [
+  ['event-bus', 139000, 3900], ['feature-flags', 139000, 3900], ['rate-limit', 139000, 3900],
+  ['http-client', 169000, 4900], ['enterprise-features', 169000, 4900],
+  ['notification', 169000, 4900], ['config-runtime', 169000, 4900], ['product-catalog', 239000, 6900],
+];
+
+function makeOneTimeProfile(productId: string, displayName: string, amountTHB: number, amountUSD: number): ProductBillingProfile {
+  const bundle = productId === 'module-hub-bundle-8';
+  const planId = bundle ? 'bundle-8' : productId;
+  const source = bundle ? 'bundle-8' : productId;
+  return {
+    ...structuredClone(moduleHubTestProfile),
+    productId,
+    productCode: bundle ? 'MODULE-HUB-BUNDLE-8' : `MODULE-${productId.toUpperCase()}`,
+    displayName,
+    plans: [{
+      planId, packageRef: bundle ? 'module-hub:bundle-8' : `module-hub:${productId}`,
+      model: 'one_time', amountMinor: amountTHB, pricesByCurrency: { THB: amountTHB, USD: amountUSD }, interval: 'none',
+      trialRef: null, freeTierRef: null, graceRef: null, retryDunningRef: null,
+      entitlementKeys: [`source:${source}`, `updates:${source}`], includedUpdateMonths: 12,
+    }],
+  };
+}
+
+// Runtime registrations use storefront/module folder slugs as product identities.
+export const moduleHubProductProfiles: ProductBillingProfile[] = [
+  ...modulePrices.map(([slug, thb, usd]) => makeOneTimeProfile(slug, `Module Hub ${slug}`, thb, usd)),
+  makeOneTimeProfile('module-hub-bundle-8', 'Module Hub Bundle (8 modules)', 869000, 24900),
+];

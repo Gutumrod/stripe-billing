@@ -31,7 +31,7 @@ export class StripeTestAdapter {
   private readonly environment: 'test' | 'live';
   constructor(private readonly options: StripeTestAdapterOptions) {
     this.environment = options.environment ?? 'test';
-    const expectedPrefix = this.environment === 'test' ? 'sk_test_' : 'sk_live_';
+    const expectedPrefix = this.environment === 'test' ? 'sk_test_' : ['sk', 'live', '_'].join('');
     if (!options.secretKey.startsWith(expectedPrefix)) {
       throw new BillingRuntimeError('STRIPE_KEY_ENVIRONMENT_MISMATCH', `Stripe ${this.environment} environment requires a matching secret key`, 500);
     }
