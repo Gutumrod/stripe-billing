@@ -1,7 +1,7 @@
 # SB01 Real-Money Readiness — 2026-09-28
 
-Task: `HOUSE-SB01-REAL-MONEY`  
-Branch: `codex/sb01-real-money-20260928`  
+Task: `HOUSE-SB01-REAL-MONEY`
+Branch: `codex/sb01-real-money-20260928`
 Classification: engineering work in progress; **not ready to deploy or accept money**.
 
 ## Verified changes in this branch
