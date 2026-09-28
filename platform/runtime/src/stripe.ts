@@ -2,6 +2,7 @@ import { BillingRuntimeError, ProviderSubscriptionSnapshot, RuntimeProfile } fro
 
 export interface StripeTestAdapterOptions {
   secretKey: string;
+  environment?: 'test' | 'live';
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
 }
@@ -15,9 +16,12 @@ interface StripeObject {
 export class StripeTestAdapter {
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly timeoutMs: number;
+  private readonly environment: 'test' | 'live';
   constructor(private readonly options: StripeTestAdapterOptions) {
-    if (!options.secretKey.startsWith('sk_test_')) {
-      throw new BillingRuntimeError('LIVE_KEY_DENIED', 'Phase 2 requires a Stripe Test secret', 500);
+    this.environment = options.environment ?? 'test';
+    const expectedPrefix = this.environment === 'test' ? 'sk_test_' : 'sk_live_';
+    if (!options.secretKey.startsWith(expectedPrefix)) {
+      throw new BillingRuntimeError('STRIPE_KEY_ENVIRONMENT_MISMATCH', `Stripe ${this.environment} environment requires a matching secret key`, 500);
     }
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.timeoutMs = options.timeoutMs ?? 15_000;
@@ -51,8 +55,9 @@ export class StripeTestAdapter {
         );
       }
       const object = body as unknown as T;
-      if (object.livemode === true) {
-        throw new BillingRuntimeError('LIVE_PROVIDER_OBJECT_DENIED', 'Stripe returned livemode=true in Phase 2', 500);
+      if (typeof object.livemode === 'boolean' && object.livemode !== (this.environment === 'live')) {
+        const code = this.environment === 'test' ? 'LIVE_PROVIDER_OBJECT_DENIED' : 'TEST_PROVIDER_OBJECT_DENIED';
+        throw new BillingRuntimeError(code, 'Stripe returned an object for a different billing environment', 500);
       }
       return object;
     } catch (error) {
@@ -95,6 +100,29 @@ export class StripeTestAdapter {
       params.set(`metadata[${key}]`, value);
       params.set(`subscription_data[metadata][${key}]`, value);
     }
+    const session = await this.request<StripeObject>('/checkout/sessions', 'POST', params, input.idempotencyKey);
+    return {
+      id: session.id,
+      url: typeof session.url === 'string' ? session.url : null,
+      status: typeof session.status === 'string' ? session.status : null,
+    };
+  }
+  async createOneTimeCheckout(input: {
+    customerId: string;
+    priceId: string;
+    successUrl: string;
+    cancelUrl: string;
+    metadata: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<{ id: string; url: string | null; status: string | null }> {
+    const params = new URLSearchParams();
+    params.set('mode', 'payment');
+    params.set('customer', input.customerId);
+    params.set('line_items[0][price]', input.priceId);
+    params.set('line_items[0][quantity]', '1');
+    params.set('success_url', input.successUrl);
+    params.set('cancel_url', input.cancelUrl);
+    for (const [key, value] of Object.entries(input.metadata)) params.set(`metadata[${key}]`, value);
     const session = await this.request<StripeObject>('/checkout/sessions', 'POST', params, input.idempotencyKey);
     return {
       id: session.id,
@@ -158,11 +186,12 @@ export class StripeTestAdapter {
     };
   }
 
-  resolvePrice(profile: Readonly<RuntimeProfile>, planId: string): string {
-    if (profile.environment !== 'test') {
-      throw new BillingRuntimeError('LIVE_PROFILE_DENIED', 'Phase 2 Stripe adapter is Test-only', 500);
+  resolvePrice(profile: Readonly<RuntimeProfile>, planId: string, currency = profile.currency.code): string {
+    if (profile.environment !== this.environment) {
+      throw new BillingRuntimeError('PROFILE_ENVIRONMENT_MISMATCH', 'Stripe profile environment differs from configured adapter', 500);
     }
-    const priceId = profile.providerMappings.stripe.test.stripePriceIds[planId];
+    const mapping = profile.providerMappings.stripe[profile.environment].stripePriceIds;
+    const priceId = mapping[`${planId}:${currency}`] ?? (currency === profile.currency.code ? mapping[planId] : undefined);
     if (!priceId) throw new BillingRuntimeError('PLAN_PROVIDER_MAPPING_MISSING', 'Stripe Test Price mapping missing', 409);
     return priceId;
   }

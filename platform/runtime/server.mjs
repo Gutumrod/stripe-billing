@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 const { CentralBillingRuntime } = require('./dist');
 const { ProductBillingProfileRegistry } = require('../profile-registry/dist/src/registry');
 const { ps01TestProfile } = require('../profile-registry/dist/profiles/PS01.test');
+const { ps01RealMoneyTestProfile } = require('../profile-registry/dist/profiles/PS01.real-money.test');
 const { lk01TestProfile } = require('../profile-registry/dist/profiles/LK01.test');
 
 function required(name) {
@@ -22,12 +23,19 @@ function parseJson(name, fallback) {
   catch { throw new Error(`Invalid JSON environment variable: ${name}`); }
 }
 
-const environment = process.env.BILLING_ENVIRONMENT ?? 'test';
+const requestedEnvironment = process.env.BILLING_ENVIRONMENT ?? 'test';
+if (!['test', 'production'].includes(requestedEnvironment)) {
+  throw new Error('BILLING_ENVIRONMENT must be exactly test or production');
+}
+const environment = requestedEnvironment === 'production' ? 'live' : 'test';
 const admissionTestMode = process.env.BILLING_ADMISSION_TEST_MODE === 'true';
-const schema = process.env.BILLING_SCHEMA ?? 'billing_core_staging';
+const schema = process.env.BILLING_SCHEMA ?? (environment === 'live' ? 'billing_core' : 'billing_core_staging');
 const registry = new ProductBillingProfileRegistry();
-registry.register(ps01TestProfile);
-registry.register(lk01TestProfile);
+if (environment === 'test') {
+  registry.register(ps01TestProfile);
+  registry.register(ps01RealMoneyTestProfile);
+  registry.register(lk01TestProfile);
+}
 
 const logger = {
   info(event, fields) { console.log(JSON.stringify({ level: 'info', event, ...fields })); },

@@ -20,6 +20,10 @@ export interface PlanContract {
   graceRef: string | null;
   retryDunningRef: string | null;
   entitlementKeys: string[];
+  /** Fixed server-owned amounts per supported currency; values use that currency's minor units. */
+  pricesByCurrency?: Record<string, number>;
+  salesStartsAt?: string | null;
+  salesEndsAt?: string | null;
 }
 
 export interface RailContract {
@@ -70,6 +74,7 @@ export interface ProductBillingProfile {
   commercialPolicy: {
     policyRef: string;
     refundPolicyRef: string;
+    refundWindowDays?: number;
     taxPolicyRef: string | null;
     priceChangePolicyRef: string | null;
   };

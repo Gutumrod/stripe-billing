@@ -40,6 +40,9 @@ export interface PlanProfile {
   amountMinor: number | null;
   interval: 'none' | 'month' | 'year' | 'manual_period';
   entitlementKeys: string[];
+  pricesByCurrency?: Record<string, number>;
+  salesStartsAt?: string | null;
+  salesEndsAt?: string | null;
 }
 
 export interface RuntimeProfile {
@@ -49,6 +52,7 @@ export interface RuntimeProfile {
   profileVersion: number;
   status: string;
   currency: { code: string };
+  commercialPolicy?: { refundWindowDays?: number };
   plans: PlanProfile[];
   providerMappings: {
     stripe: {

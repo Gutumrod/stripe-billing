@@ -66,13 +66,14 @@ function requireAddressedString(value: unknown, field: string): string {
   }
   return value.trim();
 }
-function planForPrice(profile: Readonly<RuntimeProfile>, priceId: string): { plan: RuntimeProfile['plans'][number]; priceId: string } {
+function planForPrice(profile: Readonly<RuntimeProfile>, priceId: string): { plan: RuntimeProfile['plans'][number]; priceId: string; currency: string } {
   const mapping = profile.providerMappings.stripe[profile.environment].stripePriceIds;
   const entry = Object.entries(mapping).find(([, mappedPrice]) => mappedPrice === priceId);
   if (!entry) throw new BillingRuntimeError('RECONCILE_PRICE_MISMATCH', 'Provider Price is not mapped to pinned profile', 409);
-  const plan = profile.plans.find((candidate) => candidate.planId === entry[0]);
+  const [planId, mappedCurrency] = entry[0].split(':', 2);
+  const plan = profile.plans.find((candidate) => candidate.planId === planId);
   if (!plan) throw new BillingRuntimeError('RECONCILE_PLAN_MISSING', 'Mapped plan is missing from pinned profile', 409);
-  return { plan, priceId: entry[1] };
+  return { plan, priceId: entry[1], currency: mappedCurrency ?? profile.currency.code };
 }
 
 function transitionTypeForStatus(status: string): 'grant' | 'revoke' | 'pending' {
@@ -242,14 +243,14 @@ export class CentralBillingRuntime {
   readonly stripe: StripeTestAdapter;
 
   constructor(readonly config: RuntimeConfig) {
-    if (config.environment !== 'test') {
-      throw new BillingRuntimeError('LIVE_RUNTIME_DENIED', 'Phase 2 runtime is Test-only', 500);
+    if (config.environment === 'live' && config.schema !== 'billing_core') {
+      throw new BillingRuntimeError('LIVE_RUNTIME_DENIED', 'Production runtime must use billing_core', 500);
     }
-    if (config.schema !== 'billing_core_staging') {
-      throw new BillingRuntimeError('PHASE2_SCHEMA_DENIED', 'Phase 2 runtime must use billing_core_staging', 500);
+    if (config.environment === 'test' && config.schema !== 'billing_core_staging') {
+      throw new BillingRuntimeError('PHASE2_SCHEMA_DENIED', 'Test runtime must use billing_core_staging', 500);
     }
     this.db = config.db ?? new BillingDb(config.databaseUrl, config.schema);
-    this.stripe = config.stripe ?? new StripeTestAdapter({ secretKey: config.stripeSecretKey, fetch: config.fetch });
+    this.stripe = config.stripe ?? new StripeTestAdapter({ secretKey: config.stripeSecretKey, environment: config.environment, fetch: config.fetch });
   }
   async initialize(): Promise<void> {
     await this.db.ping();
@@ -360,7 +361,7 @@ export class CentralBillingRuntime {
 
   private async handleCheckout(request: Request): Promise<Response> {
     const body = await readJsonBody(request, [
-      'account_id', 'plan_id', 'operation_id', 'success_return_ref', 'cancel_return_ref',
+      'account_id', 'plan_id', 'operation_id', 'success_return_ref', 'cancel_return_ref', 'currency', 'locale',
     ]);
     const accountId = requireString(body.account_id, 'account_id');
     const planId = requireString(body.plan_id, 'plan_id');
@@ -368,19 +369,33 @@ export class CentralBillingRuntime {
     const successRef = requireString(body.success_return_ref, 'success_return_ref');
     const cancelRef = requireString(body.cancel_return_ref, 'cancel_return_ref');
     const authority = await this.authority(request, 'checkout', 'checkout', accountId, operationId);
+    const locale = typeof body.locale === 'string' ? body.locale.trim().toLowerCase() : 'th';
+    const currency = typeof body.currency === 'string' ? body.currency.trim().toUpperCase() : 'THB';
+    const localeCurrency = locale.startsWith('en') ? 'USD' : locale.startsWith('th') ? 'THB' : null;
+    if (!localeCurrency || currency !== localeCurrency) {
+      throw new BillingRuntimeError('CHECKOUT_CURRENCY_LOCALE_MISMATCH', 'Checkout currency must match the selected supported locale', 400);
+    }
     const plan = authority.profile.plans.find((candidate) => candidate.planId === planId);
-    if (!plan || !['subscription', 'one_time', 'manual_renewal'].includes(plan.model) || !plan.amountMinor) {
+    if (!plan || !['subscription', 'one_time', 'manual_renewal'].includes(plan.model)
+      || !(plan.pricesByCurrency?.[currency] ?? (currency === authority.profile.currency.code ? plan.amountMinor : null))) {
       throw new BillingRuntimeError('PLAN_NOT_CHECKOUT_ELIGIBLE', 'Plan is not eligible for paid checkout', 409);
     }
-    if (plan.model !== 'subscription') {
-      throw new BillingRuntimeError('PHASE2_MODEL_UNSUPPORTED', 'Phase 2 checkout proves subscription rail only', 409);
+    if (plan.interval === 'year' && (
+      !plan.salesStartsAt || !plan.salesEndsAt
+      || !Number.isFinite(Date.parse(plan.salesStartsAt)) || !Number.isFinite(Date.parse(plan.salesEndsAt))
+      || Date.now() < Date.parse(plan.salesStartsAt) || Date.now() >= Date.parse(plan.salesEndsAt)
+    )) {
+      throw new BillingRuntimeError('PLAN_SALES_WINDOW_CLOSED', 'Annual launch pricing is not currently available', 409);
     }
-    const priceId = this.stripe.resolvePrice(authority.profile, planId);
+    if (!['subscription', 'one_time'].includes(plan.model)) {
+      throw new BillingRuntimeError('CHECKOUT_MODEL_UNSUPPORTED', 'Only subscription and one-time plans can use Stripe Checkout', 409);
+    }
+    const priceId = this.stripe.resolvePrice(authority.profile, planId, currency);
     const successUrl = this.returnUrl(authority.profile, 'success', successRef);
     const cancelUrl = this.returnUrl(authority.profile, 'cancel', cancelRef);
     const fingerprint = await requestFingerprint({
       route: '/v1/checkout', accountId, planId, operationId, successRef, cancelRef,
-      productId: authority.profile.productId, profileVersion: authority.profile.profileVersion, priceId,
+      productId: authority.profile.productId, profileVersion: authority.profile.profileVersion, priceId, currency,
     });
     const operation = await this.db.beginOperation({
       environment: authority.credential.environment, productId: authority.credential.productId,
@@ -430,7 +445,7 @@ export class CentralBillingRuntime {
       operationId, String(authority.profile.profileVersion), 'checkout',
     ]);
     try {
-      const checkout = await this.stripe.createSubscriptionCheckout({
+      const checkoutInput = {
         customerId: providerCustomerId,
         priceId,
         successUrl,
@@ -444,7 +459,10 @@ export class CentralBillingRuntime {
           plan_id: planId,
           operation_id: operationId,
         },
-      });
+      };
+      const checkout = plan.model === 'one_time'
+        ? await this.stripe.createOneTimeCheckout(checkoutInput)
+        : await this.stripe.createSubscriptionCheckout(checkoutInput);
       await this.db.completeOperation(operation.id, checkout.id, {
         checkout_session_id: checkout.id,
         status: checkout.status,
@@ -732,8 +750,9 @@ export class CentralBillingRuntime {
     const event = await verifyStripeWebhook(
       rawBody, request.headers.get('stripe-signature'), this.config.stripeWebhookSecret,
     );
-    if (event.livemode) {
-      throw new BillingRuntimeError('LIVE_WEBHOOK_DENIED', 'Live Stripe webhook denied in Phase 2', 403);
+    if (event.livemode !== (this.config.environment === 'live')) {
+      const code = this.config.environment === 'test' ? 'LIVE_WEBHOOK_DENIED' : 'TEST_WEBHOOK_DENIED';
+      throw new BillingRuntimeError(code, 'Stripe webhook mode differs from configured billing environment', 403);
     }
     const mapping = event.providerCustomerId
       ? await this.db.getCustomerByProviderId(event.providerCustomerId)
@@ -813,7 +832,7 @@ export class CentralBillingRuntime {
     }
   }
   private async processReconcileJob(job: OutboxJob): Promise<void> {
-    if (job.environment !== 'test') throw new BillingRuntimeError('LIVE_JOB_DENIED', 'Live reconciliation job denied', 500);
+    if (job.environment !== this.config.environment) throw new BillingRuntimeError('JOB_ENVIRONMENT_MISMATCH', 'Reconciliation job differs from configured billing environment', 500);
     const providerObjectId = requireString(job.payload.providerObjectId, 'providerObjectId');
     const profile = this.config.profileRegistry.getRegistered(job.productId, job.environment, job.profileVersion);
     if (profile.status === 'pending_validation' && !this.config.admissionTestMode) {
@@ -827,19 +846,24 @@ export class CentralBillingRuntime {
       throw new BillingRuntimeError('RECONCILE_CUSTOMER_MAPPING_MISSING', 'Provider customer mapping is missing', 409);
     }
     const snapshot = await this.stripe.retrieveSubscription(providerObjectId);
-    if (snapshot.livemode) throw new BillingRuntimeError('LIVE_PROVIDER_OBJECT_DENIED', 'Live provider object denied', 500);
+    if (snapshot.livemode !== (job.environment === 'live')) {
+      const code = job.environment === 'test' ? 'LIVE_PROVIDER_OBJECT_DENIED' : 'TEST_PROVIDER_OBJECT_DENIED';
+      throw new BillingRuntimeError(code, 'Provider object differs from configured billing environment', 500);
+    }
     if (snapshot.customerId !== mapping.providerCustomerId) {
       throw new BillingRuntimeError('RECONCILE_ACCOUNT_MISMATCH', 'Provider customer does not match account mapping', 409);
     }
-    const { plan } = planForPrice(profile, snapshot.priceId);
+    const { plan, currency } = planForPrice(profile, snapshot.priceId);
     const expectedMapping = profile.providerMappings.stripe[profile.environment];
     if (snapshot.productId !== expectedMapping.stripeProductId) {
       throw new BillingRuntimeError('RECONCILE_PRODUCT_MISMATCH', 'Provider Product does not match pinned profile', 409);
     }
-    if (snapshot.amountMinor !== plan.amountMinor) {
+    const expectedAmount = plan.pricesByCurrency?.[currency]
+      ?? (currency === profile.currency.code ? plan.amountMinor : null);
+    if (snapshot.amountMinor !== expectedAmount) {
       throw new BillingRuntimeError('RECONCILE_AMOUNT_MISMATCH', 'Provider amount does not match pinned plan', 409);
     }
-    if (snapshot.currency !== profile.currency.code) {
+    if (snapshot.currency !== currency) {
       throw new BillingRuntimeError('RECONCILE_CURRENCY_MISMATCH', 'Provider currency does not match pinned profile', 409);
     }
     if (plan.interval !== 'none') {

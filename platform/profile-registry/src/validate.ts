@@ -14,6 +14,10 @@ export function collectRegistrationIssues(profile: ProductBillingProfile): strin
   if (!/^[A-Z]{3}$/.test(profile.currency.code)) issues.push('currency.code must be uppercase ISO-4217 form');
   if (!Number.isInteger(profile.currency.minorUnitExponent) || profile.currency.minorUnitExponent < 0) issues.push('currency.minorUnitExponent must be a non-negative integer');
   if (profile.currency.allowedMinorUnits.increment <= 0) issues.push('currency increment must be positive');
+  if (profile.commercialPolicy.refundWindowDays !== undefined
+    && (!Number.isInteger(profile.commercialPolicy.refundWindowDays) || profile.commercialPolicy.refundWindowDays < 0)) {
+    issues.push('commercialPolicy.refundWindowDays must be a non-negative integer');
+  }
 
   const planIds = new Set<string>();
   for (const plan of profile.plans) {
@@ -22,6 +26,11 @@ export function collectRegistrationIssues(profile: ProductBillingProfile): strin
     planIds.add(plan.planId);
     if (!profile.billingModels.includes(plan.model)) issues.push(`plan ${plan.planId} model is not declared in billingModels`);
     if (plan.amountMinor !== null && (!Number.isInteger(plan.amountMinor) || plan.amountMinor < 0)) issues.push(`plan ${plan.planId} amountMinor is invalid`);
+    for (const [currency, amount] of Object.entries(plan.pricesByCurrency ?? {})) {
+      if (!/^[A-Z]{3}$/.test(currency) || !Number.isInteger(amount) || amount <= 0) {
+        issues.push(`plan ${plan.planId} has an invalid fixed price for ${currency}`);
+      }
+    }
   }
   return issues;
 }
